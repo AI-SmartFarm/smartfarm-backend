@@ -18,9 +18,12 @@ class AiClientConfig {
 				.build();
 		JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
 		requestFactory.setReadTimeout(Duration.ofMillis(properties.readTimeoutMs()));
-		return RestClient.builder()
+		RestClient.Builder builder = RestClient.builder()
 				.baseUrl(properties.baseUrl())
-				.requestFactory(requestFactory)
-				.build();
+				.requestFactory(requestFactory);
+		if (properties.apiKey() != null && !properties.apiKey().isBlank()) {
+			builder.defaultHeader("X-API-Key", properties.apiKey());
+		}
+		return builder.build();
 	}
 }

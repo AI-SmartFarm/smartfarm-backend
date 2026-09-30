@@ -32,6 +32,7 @@ class AiDiagnosisClientTest {
 	private final AtomicReference<String> path = new AtomicReference<>();
 	private final AtomicReference<String> contentType = new AtomicReference<>();
 	private final AtomicReference<String> body = new AtomicReference<>();
+	private final AtomicReference<String> apiKeyHeader = new AtomicReference<>();
 	private volatile String responseJson = DETECTED;
 
 	@BeforeEach
@@ -40,6 +41,7 @@ class AiDiagnosisClientTest {
 		server.createContext("/", exchange -> {
 			path.set(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath());
 			contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+			apiKeyHeader.set(exchange.getRequestHeaders().getFirst("X-API-Key"));
 			body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1));
 			byte[] out = responseJson.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -97,5 +99,20 @@ class AiDiagnosisClientTest {
 		assertThat(response.isDetected()).isFalse();
 		assertThat(response.detections()).isEmpty();
 		assertThat(response.message()).contains("찾지 못했습니다");
+	}
+
+	@Test
+	void sendsApiKeyHeaderOnlyWhenConfigured() {
+		String baseUrl = "http://localhost:" + server.getAddress().getPort();
+
+		new AiDiagnosisClient(new AiClientConfig().aiRestClient(
+				new AiServiceProperties(baseUrl, "secret-key", 5000, 30000)))
+				.diagnose(new byte[] {1}, "leaf.jpg", "tomato");
+		assertThat(apiKeyHeader.get()).isEqualTo("secret-key");
+
+		new AiDiagnosisClient(new AiClientConfig().aiRestClient(
+				new AiServiceProperties(baseUrl, "", 5000, 30000)))
+				.diagnose(new byte[] {1}, "leaf.jpg", "tomato");
+		assertThat(apiKeyHeader.get()).isNull();
 	}
 }
