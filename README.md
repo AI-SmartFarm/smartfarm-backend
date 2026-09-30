@@ -18,6 +18,7 @@ AI 기반 개방형 모바일 스마트팜 관리 시스템의 백엔드 (Java 2
 응답 한 번에 진단 결과(API-007)와 중증도(API-006)가 함께 온다. 코드는 `com.smartfarm.backend.ai` 패키지에 있다.
 
 - 주소: `AI_SERVICE_URL` (기본 `http://localhost:8000`), 읽기 타임아웃 30초
+- 인증: AI 서버에 `API_KEY`가 설정돼 있으면 같은 값을 `AI_SERVICE_API_KEY`로 넣는다 (`X-API-Key` 헤더로 전송, 없으면 401)
 - 사용: `AiDiagnosisClient.diagnose(이미지 바이트, 파일명, crop)` — `crop`은 API-004 `species`를 소문자로 바꾼 값 (`tomato`, `pepper`, ...)
 - 로컬에서 AI 서버 띄우기: smartfarm-ai 저장소에서 `pip install -r requirements.txt` 후
   `uvicorn api:app --app-dir scripts --port 8000`
