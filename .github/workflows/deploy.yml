@@ -41,6 +41,8 @@ jobs:
       DB_NAME: smartfarm
       DB_USERNAME: smartfarm
       DB_PASSWORD: ci-password
+      # 테스트 전용 서명 키. 일회용 러너에서만 쓰이고 서버 키와는 무관하다.
+      JWT_SECRET: ci-only-jwt-secret-0123456789abcdef0123
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
