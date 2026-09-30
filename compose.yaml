@@ -1,0 +1,18 @@
+# 로컬 개발용 MySQL. 접속 정보는 .env에서 읽는다.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: smartfarm-mysql
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:

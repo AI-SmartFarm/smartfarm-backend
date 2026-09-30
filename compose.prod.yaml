@@ -1,0 +1,45 @@
+# EC2 배포용. 서버의 /opt/smartfarm/.env에서 DB 비밀번호와 ECR_REGISTRY를 읽는다.
+# 인바운드 포트를 열지 않고 Cloudflare 터널로만 외부에 노출한다.
+services:
+  app:
+    image: ${ECR_REGISTRY}/smartfarm-backend:${IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      JPA_DDL_AUTO: update
+      # t3.small(2GB)에 MySQL과 같이 올리므로 힙 상한을 둔다.
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
+    mem_limit: 768m
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # 계정 없는 quick tunnel이라 이 컨테이너가 재시작되면 주소가 바뀐다. 앱만 재배포하면 주소는 유지된다.
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.3
+    command: tunnel --no-autoupdate --url http://app:8080
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  mysql-data:

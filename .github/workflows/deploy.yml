@@ -1,0 +1,114 @@
+name: Test and Deploy
+
+# 팀 저장소 main에 merge될 때만 배포한다. 포크나 다른 브랜치는 테스트만 돈다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: smartfarm-backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: smartfarm
+          MYSQL_USER: smartfarm
+          MYSQL_PASSWORD: ci-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -usmartfarm -pci-password --silent"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: smartfarm
+      DB_USERNAME: smartfarm
+      DB_PASSWORD: ci-password
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew build --no-daemon
+
+  deploy:
+    needs: test
+    if: github.repository == 'AI-SmartFarm/smartfarm-backend' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # AWS 키를 저장하지 않고 OIDC로 main 전용 역할을 받는다.
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 인바운드 포트 없이 SSM으로 서버에 재배포 명령을 보낸다. compose 파일과 배포 스크립트도 매번 저장소 기준으로 덮어쓴다.
+      - name: Deploy to EC2 via SSM
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          jq -n --arg compose "$(base64 -w0 compose.prod.yaml)" --arg script "$(base64 -w0 scripts/deploy.sh)" --arg tag "$IMAGE_TAG" '{commands: [
+            "cd /opt/smartfarm",
+            "echo \($compose) | base64 -d > compose.prod.yaml",
+            "echo \($script) | base64 -d > deploy.sh",
+            "bash deploy.sh \($tag)"
+          ]}' > params.json
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${IMAGE_TAG}" \
+            --parameters file://params.json \
+            --query Command.CommandId --output text)
+          # 기본 waiter는 100초에서 끝나 이미지 pull이 길면 오판하므로 직접 10분까지 기다린다.
+          for _ in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Pending|InProgress|Delayed) sleep 10 ;; *) break ;; esac
+          done
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text | tee ssm-output.txt
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text
+          # 팀원이 Actions 요약 화면에서 바로 서버 주소를 볼 수 있게 한다.
+          grep -E '^(배포 완료|health 확인 실패|터널 주소)' ssm-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+          test "$STATUS" = "Success"
