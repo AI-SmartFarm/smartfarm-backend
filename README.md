@@ -20,5 +20,6 @@ AI 기반 개방형 모바일 스마트팜 관리 시스템의 백엔드 (Java 2
 - 주소: `AI_SERVICE_URL` (기본 `http://localhost:8000`), 읽기 타임아웃 30초
 - 인증: AI 서버에 `API_KEY`가 설정돼 있으면 같은 값을 `AI_SERVICE_API_KEY`로 넣는다 (`X-API-Key` 헤더로 전송, 없으면 401)
 - 사용: `AiDiagnosisClient.diagnose(이미지 바이트, 파일명, crop)` — `crop`은 API-004 `species`를 소문자로 바꾼 값 (`tomato`, `pepper`, ...)
+- 연결 확인: `GET /api/v1/ai/status` → `{"status":"UP","latencyMs":...}` (200). 아니면 503이고 `status`로 원인을 구분한다: `UNAUTHORIZED`(키 불일치), `UNREACHABLE`(AI 서버 꺼짐·주소 틀림·터널 주소 바뀜), `ERROR`
 - 로컬에서 AI 서버 띄우기: smartfarm-ai 저장소에서 `pip install -r requirements.txt` 후
   `uvicorn api:app --app-dir scripts --port 8000`

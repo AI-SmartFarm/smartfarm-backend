@@ -5,7 +5,10 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 /** smartfarm-ai(FastAPI)의 API-005 `POST /diagnose`를 동기 호출한다. 응답에 API-006(중증도)·API-007(진단 결과)이 함께 담긴다. */
 @Component
@@ -18,6 +21,28 @@ public class AiDiagnosisClient {
 
 	public AiDiagnosisClient(RestClient aiRestClient) {
 		this.aiRestClient = aiRestClient;
+	}
+
+	/** AI 서버의 GET /ping(API 키 검사 포함)을 호출해 연결·인증 상태를 돌려준다. 예외를 던지지 않는다. */
+	public AiStatus ping() {
+		long start = System.nanoTime();
+		try {
+			aiRestClient.get().uri("/ping").retrieve().toBodilessEntity();
+			return new AiStatus(AiStatus.UP, elapsedMs(start));
+		}
+		catch (HttpClientErrorException.Unauthorized e) {
+			return new AiStatus(AiStatus.UNAUTHORIZED, elapsedMs(start));
+		}
+		catch (ResourceAccessException e) {
+			return new AiStatus(AiStatus.UNREACHABLE, elapsedMs(start));
+		}
+		catch (RestClientException e) {
+			return new AiStatus(AiStatus.ERROR, elapsedMs(start));
+		}
+	}
+
+	private static long elapsedMs(long startNanos) {
+		return (System.nanoTime() - startNanos) / 1_000_000;
 	}
 
 	public DiagnosisResponse diagnose(byte[] image, String filename, String crop) {

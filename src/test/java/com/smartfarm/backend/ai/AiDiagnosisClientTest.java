@@ -34,6 +34,7 @@ class AiDiagnosisClientTest {
 	private final AtomicReference<String> body = new AtomicReference<>();
 	private final AtomicReference<String> apiKeyHeader = new AtomicReference<>();
 	private volatile String responseJson = DETECTED;
+	private volatile int responseStatus = 200;
 
 	@BeforeEach
 	void startFakeAiServer() throws IOException {
@@ -45,7 +46,7 @@ class AiDiagnosisClientTest {
 			body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1));
 			byte[] out = responseJson.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
-			exchange.sendResponseHeaders(200, out.length);
+			exchange.sendResponseHeaders(responseStatus, out.length);
 			exchange.getResponseBody().write(out);
 			exchange.close();
 		});
@@ -114,5 +115,46 @@ class AiDiagnosisClientTest {
 				new AiServiceProperties(baseUrl, "", 5000, 30000)))
 				.diagnose(new byte[] {1}, "leaf.jpg", "tomato");
 		assertThat(apiKeyHeader.get()).isNull();
+	}
+
+	@Test
+	void pingReportsUpThroughTheStatusEndpoint() {
+		responseJson = "{\"status\": \"ok\"}";
+		AiDiagnosisClient client = client();
+
+		AiStatus status = client.ping();
+		var response = new AiStatusController(client).status();
+
+		assertThat(path.get()).isEqualTo("GET /ping");
+		assertThat(status.isUp()).isTrue();
+		assertThat(status.latencyMs()).isGreaterThanOrEqualTo(0);
+		assertThat(response.getStatusCode().value()).isEqualTo(200);
+		assertThat(response.getBody().status()).isEqualTo("UP");
+	}
+
+	@Test
+	void pingReportsUnauthorizedWhenKeyIsRejected() {
+		responseStatus = 401;
+		responseJson = "{\"detail\": \"invalid or missing X-API-Key\"}";
+		AiDiagnosisClient client = client();
+
+		assertThat(client.ping().status()).isEqualTo(AiStatus.UNAUTHORIZED);
+		assertThat(new AiStatusController(client).status().getStatusCode().value()).isEqualTo(503);
+	}
+
+	@Test
+	void pingReportsErrorOnServerFailure() {
+		responseStatus = 500;
+		responseJson = "{}";
+
+		assertThat(client().ping().status()).isEqualTo(AiStatus.ERROR);
+	}
+
+	@Test
+	void pingReportsUnreachableWhenServerIsDown() {
+		AiDiagnosisClient client = client();
+		server.stop(0);
+
+		assertThat(client.ping().status()).isEqualTo(AiStatus.UNREACHABLE);
 	}
 }
