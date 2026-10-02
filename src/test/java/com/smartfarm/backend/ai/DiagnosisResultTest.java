@@ -14,7 +14,7 @@ class DiagnosisResultTest {
 	}
 
 	private static DiagnosisResponse detected(Detection... detections) {
-		return new DiagnosisResponse("detected", "tomato", null, null, List.of(detections));
+		return new DiagnosisResponse("detected", "tomato", null, null, List.of(detections), null);
 	}
 
 	@Test
@@ -82,7 +82,7 @@ class DiagnosisResultTest {
 	@Test
 	void noDetectionIsNotInfectedWithoutConfidence() {
 		DiagnosisResult result = DiagnosisResult.from(
-				new DiagnosisResponse("no_detection", "tomato", "병징을 찾지 못했습니다", null, null));
+				new DiagnosisResponse("no_detection", "tomato", "병징을 찾지 못했습니다", null, null, null));
 
 		assertThat(result.infected()).isFalse();
 		assertThat(result.confidence()).isNull();
