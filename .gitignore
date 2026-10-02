@@ -47,3 +47,6 @@ out/
 
 ### 비밀값 ###
 .env
+
+# API-004 사진 파일 (로컬 실행 시 IMAGE_STORAGE_DIR 기본값)
+/data/
