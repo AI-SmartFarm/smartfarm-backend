@@ -22,6 +22,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// 기기 비밀값 해시(BCrypt)만 필요해서 Spring Security 전체 대신 crypto 모듈만 쓴다.
+	implementation 'org.springframework.security:spring-security-crypto'
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	// Boot 4는 Jackson 3을 쓰는데 jjwt-jackson은 Jackson 2를 끌어오므로 gson 직렬화기를 쓴다.
+	runtimeOnly 'io.jsonwebtoken:jjwt-gson:0.13.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'
