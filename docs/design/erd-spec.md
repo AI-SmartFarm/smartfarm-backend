@@ -5,12 +5,13 @@
 | 시스템 | AI 기반 개방형 모바일 스마트팜 관리 시스템 — Backend |
 | DBMS | MySQL 8.4 (문자셋 `utf8mb4`, 정렬 `utf8mb4_0900_ai_ci`, 엔진 InnoDB) |
 | 작성 | 김승윤 (백엔드) |
-| 버전 | v0.1 초안 (2026-09-28) — 9/29 회의에서 확정 예정 |
-| 관련 문서 | `jwt-db-draft.md` (설계 배경과 회의 안건), API-001·API-004 명세 |
+| 버전 | v0.2 (2026-10-02) — `farm`, `gateway`, `telemetry`는 구현·배포됨. 나머지는 구현하면서 확정 |
+| 관련 문서 | `jwt-auth.md` (JWT 방식), `docs/api/api-spec-draft.md` (API 명세) |
+| 변경 이력 | v0.2: 진단 중증도를 단계로 변경, 사진에 카메라 ID 추가, 시각 정밀도와 `telemetry` 구현 내용 반영 (10장) |
 
 ## 1. 작성 규칙
 - 테이블과 컬럼 이름은 `snake_case`를 쓴다.
-- 모든 시각은 `DATETIME(3)`에 **한국 시간(Asia/Seoul)**으로 저장한다. 시뮬레이터가 보내는 UTC 시각은 저장할 때 변환한다.
+- 모든 시각은 `DATETIME(6)`에 **한국 시간(Asia/Seoul)**으로 저장한다. 시뮬레이터가 보내는 UTC 시각은 저장할 때 변환한다.
 - 작물별 기준값처럼 바뀔 수 있는 값은 코드에 두지 않고 테이블(`crop_profile`, `disease_response`)에 둔다.
 - 로그성 데이터(텔레메트리, 명령, 사진, 진단)는 삭제 연쇄(CASCADE)를 쓰지 않는다. 이력이 실수로 지워지지 않게 하기 위해서다.
 
@@ -57,7 +58,6 @@ erDiagram
         double light_lux
         varchar species
         varchar growth_stage
-        json raw_payload
         datetime received_at
     }
     CONTROL_COMMAND {
@@ -84,6 +84,7 @@ erDiagram
         datetime captured_at
         varchar trigger_type
         varchar source
+        varchar camera_id
         varchar species
         int cell_x
         int cell_z
@@ -105,7 +106,10 @@ erDiagram
         boolean infected
         varchar disease_name
         double confidence
-        double severity
+        varchar severity_level
+        int severity_risk_code
+        boolean severity_low_confidence
+        json boxes
         varchar model_version
         json raw_result
         datetime requested_at
@@ -140,17 +144,17 @@ erDiagram
 ```
 
 ## 3. 테이블 목록
-| # | 테이블 | 한글명 | 설명 | 관련 API |
-|---|---|---|---|---|
-| 1 | `farm` | 농장 | 관리 대상 농장. 현재는 `greenhouse-01` 1개 | 전체 |
-| 2 | `gateway` | 게이트웨이(기기) | JWT를 발급받는 기기. 현재는 Unity 시뮬레이터 | API-008 |
-| 3 | `telemetry` | 환경 데이터 | 온도, 토양 수분 등 센서 이력 | API-001, 002 |
-| 4 | `control_command` | 제어 명령 | 명령 대기열 + 제어 이력 + 자동 대응 이력 | API-003, 007 |
-| 5 | `crop_image` | 작물 사진 | 시뮬레이터가 보낸 사진의 메타데이터 (파일은 디스크에 저장) | API-004 |
-| 6 | `diagnosis` | AI 진단 | 사진별 병해충 진단 결과 | API-005, 006, 007 |
-| 7 | `crop_profile` | 작물 기준값 | 작물별 적정 범위와 제어 임계값 | 자동제어 |
-| 8 | `disease_response` | 병해 대응 규칙 | 병해별 자동 대응 방식 | 자동 대응 |
-| 9 | `fcm_token` | 푸시 토큰 | 알림을 받을 모바일 기기 | 알림 |
+| # | 테이블 | 한글명 | 설명 | 관련 API | 구현 |
+|---|---|---|---|---|---|
+| 1 | `farm` | 농장 | 관리 대상 농장. 현재는 `greenhouse-01` 1개 | 전체 | 구현 |
+| 2 | `gateway` | 게이트웨이(기기) | JWT를 발급받는 기기. 현재는 Unity 시뮬레이터 | API-009 | 구현 |
+| 3 | `telemetry` | 환경 데이터 | 온도, 토양 수분 등 센서 이력 | API-001, 002 | 구현 |
+| 4 | `control_command` | 제어 명령 | 명령 대기열 + 제어 이력 + 자동 대응 이력 | API-003, 007, 008 | – |
+| 5 | `crop_image` | 작물 사진 | 시뮬레이터가 보낸 사진의 메타데이터 (파일은 디스크에 저장) | API-004, 007 | – |
+| 6 | `diagnosis` | AI 진단 | 사진별 병해충 진단 결과 | API-005, 006, 008 | – |
+| 7 | `crop_profile` | 작물 기준값 | 작물별 적정 범위와 제어 임계값 | 자동제어 | – |
+| 8 | `disease_response` | 병해 대응 규칙 | 병해별 자동 대응 방식 | 자동 대응 | – |
+| 9 | `fcm_token` | 푸시 토큰 | 알림을 받을 모바일 기기 | API-010 | – |
 
 ## 4. 테이블 정의
 
@@ -159,7 +163,7 @@ erDiagram
 |---|---|---|---|---|---|
 | farm_id | VARCHAR(50) | N | PK | | 농장 ID. 시뮬레이터 `SimConfig.farmId` (예: `greenhouse-01`) |
 | name | VARCHAR(100) | N | | | 표시 이름 |
-| created_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) | 등록 시각 |
+| created_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) | 등록 시각 |
 
 ### 4-2. `gateway` — 게이트웨이(기기)
 | 컬럼 | 타입 | NULL | 키 | 기본값 | 설명 |
@@ -170,19 +174,19 @@ erDiagram
 | gateway_type | VARCHAR(20) | N | | `SIMULATOR` | 코드: `SIMULATOR`, `GATEWAY` |
 | status | VARCHAR(20) | N | | `ACTIVE` | 코드: `ACTIVE`, `INACTIVE`. `INACTIVE`면 토큰 발급과 API 접근 모두 거부 |
 | credential_hash | VARCHAR(100) | N | | | 기기 비밀값의 BCrypt 해시. 원문은 저장하지 않는다 |
-| last_seen_at | DATETIME(3) | Y | | | 마지막 인증 요청 시각. 앱의 "기기 연결 상태" 표시에 사용 |
-| created_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) | 등록 시각 |
+| last_seen_at | DATETIME(6) | Y | | | 마지막 인증 요청 시각. 앱의 "기기 연결 상태" 표시에 사용 |
+| created_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) | 등록 시각 |
 
 ### 4-3. `telemetry` — 환경 데이터
-- 자동제어 판단은 텔레메트리를 받을 때마다 하고, 이 테이블에는 **정해진 주기(안: 1분)마다 1건**만 저장한다. 저장 주기는 9/29 회의에서 확정한다.
-- 센서가 설치되지 않아 `-1`이 오면 `NULL`로 저장한다.
+- 최신값은 받을 때마다 서버 메모리에 갱신하고(자동제어·현재 상태 조회용), 이 테이블에는 **1분마다 1건**만 저장한다. 간격은 설정값(`TELEMETRY_HISTORY_INTERVAL_SECONDS`)이며, 수집·저장 방안이 확정되면 바꾼다(9/29 회의에서 보류).
+- 센서 설치 여부(`xxxAvailable`)가 false이면 값을 `NULL`로 저장한다. 기온은 음수가 될 수 있어 `-1`이라는 값만으로는 판단하지 않는다.
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 | 설명 |
 |---|---|---|---|---|---|
 | telemetry_id | BIGINT | N | PK | AUTO_INCREMENT | |
 | farm_id | VARCHAR(50) | N | FK | | → `farm.farm_id` |
-| measured_at | DATETIME(3) | N | | | 측정 시각 (API-001 `timestampUtc`를 KST로 변환) |
-| sim_time | DATETIME(3) | Y | | | 시뮬레이션 안의 시각 (`simTimeUtc`, 이미 지역 시각) |
+| measured_at | DATETIME(6) | N | | | 측정 시각 (API-001 `timestampUtc`를 KST로 변환) |
+| sim_time | DATETIME(6) | Y | | | 시뮬레이션 안의 시각 (`simTimeUtc`, 이미 지역 시각) |
 | air_temp_c | DOUBLE | Y | | | 기온 ℃ (`sensors.airTempC`) |
 | air_humidity_pct | DOUBLE | Y | | | 상대습도 % (`sensors.airHumidityPct`) |
 | soil_moisture_pct | DOUBLE | Y | | | 토양 수분 % (`sensors.soilMoisturePct`) |
@@ -190,8 +194,7 @@ erDiagram
 | light_lux | DOUBLE | Y | | | 조도 lux (`sensors.lightLux`) |
 | species | VARCHAR(20) | Y | | | 대표 식물 종류 (`crop.species`) |
 | growth_stage | VARCHAR(20) | Y | | | 대표 식물 생육 단계 (`crop.stage`) |
-| raw_payload | JSON | Y | | | 원본 전체. 저장 여부는 회의에서 결정 |
-| received_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) | 서버 수신 시각 |
+| received_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) | 서버 수신 시각 |
 
 ### 4-4. `control_command` — 제어 명령
 - 명령 대기열(API-003), 제어 이력, AI 자동 대응 이력을 이 테이블 하나로 관리한다.
@@ -212,10 +215,10 @@ erDiagram
 | status | VARCHAR(20) | N | | `PENDING` | 코드: `PENDING`, `DELIVERED`, `ACKED`, `REJECTED`, `EXPIRED` |
 | ack_accepted | BOOLEAN | Y | | | 시뮬레이터 수락 여부 (`commandTrace.accepted`) |
 | ack_reason | VARCHAR(255) | Y | | | 결과 설명 (`commandTrace.reason`) |
-| created_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) | 명령 생성 시각 |
-| delivered_at | DATETIME(3) | Y | | | 시뮬레이터가 명령을 가져간 시각 |
-| acked_at | DATETIME(3) | Y | | | 결과 보고를 받은 시각 |
-| expires_at | DATETIME(3) | Y | | | 이 시각까지 전달되지 않으면 `EXPIRED` 처리 |
+| created_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) | 명령 생성 시각 |
+| delivered_at | DATETIME(6) | Y | | | 시뮬레이터가 명령을 가져간 시각 |
+| acked_at | DATETIME(6) | Y | | | 결과 보고를 받은 시각 |
+| expires_at | DATETIME(6) | Y | | | 이 시각까지 전달되지 않으면 `EXPIRED` 처리 |
 
 ### 4-5. `crop_image` — 작물 사진
 - 이미지 파일은 서버 디스크에 저장하고, DB에는 경로와 메타데이터만 둔다.
@@ -226,9 +229,10 @@ erDiagram
 |---|---|---|---|---|---|
 | image_id | BIGINT | N | PK | AUTO_INCREMENT | |
 | farm_id | VARCHAR(50) | N | FK | | → `farm.farm_id` |
-| captured_at | DATETIME(3) | N | | | 촬영 시각 (`timestampUtc`를 KST로 변환) |
+| captured_at | DATETIME(6) | N | | | 촬영 시각 (`timestampUtc`를 KST로 변환) |
 | trigger_type | VARCHAR(10) | N | | | 코드: `routine`(주기), `pest`(감염 즉시) |
 | source | VARCHAR(20) | N | | | 코드: `dataset-photo`, `render`, `stage-photo`, `pest-photo` |
+| camera_id | VARCHAR(60) | Y | | | 카메라 ID. 시뮬레이터는 식물마다 카메라가 1대다(`cam-<식물 ID>`) |
 | species | VARCHAR(20) | Y | | | 찍힌 식물 종류. 식물이 없으면 NULL |
 | cell_x, cell_z | INT | Y | | | 찍힌 식물의 격자 좌표 |
 | file_path | VARCHAR(255) | N | | | 서버 파일 경로 |
@@ -238,7 +242,7 @@ erDiagram
 | gt_stage | VARCHAR(20) | Y | | | 정답 생육 단계 (`groundTruthStage`) |
 | gt_pest_label | VARCHAR(30) | Y | | | 정답 병해 라벨 (`groundTruthPestLabel`, 예: `tomato-A`) |
 | gt_pest_severity | DOUBLE | Y | | | 정답 진행도 0~1 (`groundTruthPestSeverity`) |
-| received_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) | 서버 수신 시각 |
+| received_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) | 서버 수신 시각 |
 
 ### 4-6. `diagnosis` — AI 진단
 | 컬럼 | 타입 | NULL | 키 | 기본값 | 설명 |
@@ -250,11 +254,14 @@ erDiagram
 | infected | BOOLEAN | N | | | 병해 발생 여부 |
 | disease_name | VARCHAR(50) | Y | | | 병명 (예: `잎곰팡이병`) |
 | confidence | DOUBLE | Y | | | 신뢰도 0~1 |
-| severity | DOUBLE | Y | | | 중증도 (AI 출력 형식 확정 후 범위 결정) |
+| severity_level | VARCHAR(10) | Y | | | 중증도 단계: `초기`, `중기`, `말기`. AI가 단계로 판정한다 |
+| severity_risk_code | INT | Y | | | AI가 주는 중증도 코드 |
+| severity_low_confidence | BOOLEAN | Y | | | true이면 중증도는 참고용 |
+| boxes | JSON | Y | | | 병변 위치 목록 `[{x, y, width, height}]` |
 | model_version | VARCHAR(30) | Y | | | AI 모델 버전 |
 | raw_result | JSON | Y | | | AI 응답 원본 |
-| requested_at | DATETIME(3) | N | | | AI에 요청한 시각 |
-| diagnosed_at | DATETIME(3) | Y | | | 결과를 받은 시각. 실패하면 NULL |
+| requested_at | DATETIME(6) | N | | | AI에 요청한 시각 |
+| diagnosed_at | DATETIME(6) | Y | | | 결과를 받은 시각. 실패하면 NULL |
 
 ### 4-7. `crop_profile` — 작물 기준값
 - **히스테리시스:** 켜는 기준과 끄는 기준을 다르게 둬서 기준값 근처에서 장치가 계속 켜졌다 꺼지는 것을 막는다(기능 명세).
@@ -274,9 +281,10 @@ erDiagram
 | target_soil_max_pct | DOUBLE | N | | | 적정 토양 수분 상한 % |
 | irrigation_on_pct | DOUBLE | N | | | 관수 ON 수분 % |
 | irrigation_off_pct | DOUBLE | N | | | 관수 OFF 수분 % (`irrigation_on_pct`보다 높아야 함) |
-| updated_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) ON UPDATE | 마지막 수정 시각 |
+| updated_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) ON UPDATE | 마지막 수정 시각 |
 
 ### 4-8. `disease_response` — 병해 대응 규칙
+- **백엔드가 어떤 장치를 얼마나 켤지** 정하는 규칙이다. 병의 원인·증상·예방 원칙 같은 설명은 AI 응답(`diagnosis`)에도 들어 있어, 안내 문구(`guide`)를 어느 쪽에서 가져올지는 김우주 님과 정한다.
 | 컬럼 | 타입 | NULL | 키 | 기본값 | 설명 |
 |---|---|---|---|---|---|
 | disease_code | VARCHAR(30) | N | PK | | 병해 라벨 (예: `tomato-A`). AI 출력 코드와 같아야 함 |
@@ -292,8 +300,8 @@ erDiagram
 | 컬럼 | 타입 | NULL | 키 | 기본값 | 설명 |
 |---|---|---|---|---|---|
 | token | VARCHAR(255) | N | PK | | FCM 등록 토큰 |
-| created_at | DATETIME(3) | N | | CURRENT_TIMESTAMP(3) | 등록 시각 |
-| last_used_at | DATETIME(3) | Y | | | 마지막 발송 성공 시각. 오래된 토큰 정리에 사용 |
+| created_at | DATETIME(6) | N | | CURRENT_TIMESTAMP(6) | 등록 시각 |
+| last_used_at | DATETIME(6) | Y | | | 마지막 발송 성공 시각. 오래된 토큰 정리에 사용 |
 
 ## 5. 관계 정의
 | 부모 | 자식 | 관계 | FK 컬럼 | 삭제 규칙 |
@@ -365,9 +373,15 @@ erDiagram
 | lettuce-B | 상추 | 노균병 | 미정 | |
 
 ## 9. 확정 전 확인할 것
-1. `telemetry` 저장 주기와 `raw_payload` 저장 여부
-2. `crop_image` 저장 정책 (디스크 용량)
-3. `gateway`와 `device` 중 어떤 이름을 쓸지
-4. AI 출력의 병해 코드가 `tomato-A` 형식인지 (김우주 님), 중증도의 형식(0~1 수치인지 초기/중기/말기인지)
-5. 5개 작물의 기준값과 병해 대응 방식
-6. 수동 제어(`MANUAL`)를 구현할지
+1. 수집·저장 방안과 `telemetry` 저장 주기 (9/29 회의에서 보류)
+2. `crop_image` 저장 정책. 식물마다 카메라가 있어 주기마다 여러 장이 오므로 디스크 용량 문제가 더 크다
+3. 5개 작물의 기준값(`crop_profile`)과 병해별 대응 방식(`disease_response`)
+4. 병해 안내 문구를 AI 응답에서 가져올지 `disease_response.guide`에 둘지
+5. 수동 제어(`MANUAL`)를 구현할지
+6. `control_command`의 결과 반영 방식 (`commandTrace`만 쓸지, ACK API를 둘지 — API-003)
+
+## 10. 변경 이력
+| 버전 | 날짜 | 내용 |
+|---|---|---|
+| v0.1 | 2026-09-28 | 초안 |
+| v0.2 | 2026-10-02 | `farm`·`gateway`·`telemetry` 구현 반영. `telemetry.raw_payload` 제외(저장 여부 미정). 시각 컬럼을 `DATETIME(6)`로 통일. `diagnosis.severity`(숫자)를 `severity_level`·`severity_risk_code`·`severity_low_confidence`로 변경하고 `boxes` 추가(AI 응답 형식에 맞춤). `crop_image.camera_id` 추가. 관련 API 번호를 노션 목록에 맞춤(JWT = API-009, FCM = API-010) |

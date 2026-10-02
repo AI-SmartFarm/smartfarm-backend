@@ -1,10 +1,27 @@
 # API 명세 초안 (백엔드)
 
-- 작성: 김승윤 (백엔드) / 2026-09-28 / **초안 — 담당자 확인 전**
-- 범위: 백엔드가 제공하거나 호출하는 API 중 아직 비어 있는 API-002, 003, 005, 006, 007, 008과 새로 필요한 API-009
-- API-001(환경 데이터 전송), API-004(작물 이미지 전송)는 노현석 님 명세를 그대로 따르므로 여기서 다시 쓰지 않는다.
-- 9/23 공지에 따라 **인터페이스 초안**까지만 쓴다. 세부 필드와 에러 코드는 구현하면서 확정한다.
-- 관련 문서: `docs/design/jwt-db-draft.md`, `docs/design/erd-spec.md`
+- 작성: 김승윤 (백엔드) / 최초 2026-09-28, 수정 2026-10-02
+- **백엔드 API의 기준 문서다.** 노션 API 명세와 시뮬레이터 디버그 키트는 참고 자료이고, 서로 다르면 이 문서에 맞춘다.
+- API-001(환경 데이터 전송), API-004(작물 이미지 전송)의 요청 본문은 노현석 님 명세를 그대로 따르므로 여기서 다시 쓰지 않는다.
+- 세부 필드와 에러 코드는 구현하면서 확정한다. 구현이 끝난 API는 "구현 상태"에 표시한다.
+- 관련 문서: `docs/design/jwt-auth.md`, `docs/design/erd-spec.md`
+
+## API 목록과 구현 상태
+
+번호는 노션 API 명세 목록(2026-10-02 기준)에 맞췄다. 이 문서의 이전 판에서 번호가 바뀐 것은 비고에 적었다.
+
+| 번호 | API | 방향 | 인증 | 구현 상태 | 비고 |
+|---|---|---|---|---|---|
+| API-001 | 환경 데이터 전송 | 시뮬레이터 → 백엔드 | JWT | **구현·배포** | 1분에 1건 저장 |
+| API-002 | 환경 및 장치 상태 조회 | 모바일 → 백엔드 | 없음 | 미구현 | |
+| API-003 | 장치 제어 명령 전달 | 백엔드 → 시뮬레이터 | JWT | 미구현 | |
+| API-004 | 작물 이미지 전송 | 시뮬레이터 → 백엔드 | JWT | 미구현 | |
+| API-005 | 병해충 진단 요청 | 백엔드 → AI | JWT (현재 API 키) | **호출 코드 구현** (김우주) | 중증도(API-006)가 응답에 함께 온다 |
+| API-006 | 중증도 판정 | AI → 백엔드 | – | API-005 응답에 포함 | 별도 호출 없음 |
+| API-007 | 제어 로그·최근 사진 조회 | 모바일 → 백엔드 | 없음 | 미구현 | |
+| API-008 | 병해충 진단 이력 조회 | 모바일 → 백엔드 | 없음 | 미구현 | 이전 판의 API-007-B |
+| API-009 | 기기 토큰 발급 (JWT) | 시뮬레이터 → 백엔드 | 기기 ID + 비밀값 | **구현·배포** | 이전 판의 API-008 |
+| API-010 | 푸시 알림 토큰 등록 | 모바일 → 백엔드 | 없음 | 미구현 | 이전 판의 API-009 |
 
 ## 0. 공통 규칙
 
@@ -13,9 +30,10 @@
 | Base URL | 테스트 서버 `https://<터널 주소>` (현재 임시 주소, 바뀌면 공유) |
 | 데이터 형식 | JSON (`Content-Type: application/json; charset=utf-8`), 필드 이름은 camelCase |
 | 시각 형식 | 백엔드가 내보내는 시각은 ISO-8601 한국 시간 (예: `2026-10-01T14:30:00+09:00`) |
-| 인증 | **시뮬레이터 → 백엔드만 JWT** (`Authorization: Bearer <accessToken>`, API-008에서 발급). 모바일 → 백엔드는 인증 없음 |
+| 인증 | **서버 간 통신에만 JWT를 쓴다.** 시뮬레이터 → 백엔드(`Authorization: Bearer <accessToken>`, API-009에서 발급)와 백엔드 → AI 서버. 모바일 → 백엔드는 사용자 로그인이 없어 인증하지 않는다. 자세한 방식은 `docs/design/jwt-auth.md` |
 | 에러 형식 | `{"error": "설명"}` (API-001·004와 같음) |
 | 공통 상태 코드 | 200 성공 / 400 잘못된 요청 / 401 토큰 없음·만료 / 403 권한 없음(토큰의 농장 ≠ URL의 농장) / 404 없음 / 500 서버 오류 |
+| 빠진 필드 | 요청 JSON에서 필드가 빠지면 `null`로 받는다. 백엔드가 쓰지 않는 필드는 무시한다 |
 
 **JWT가 필요한 API의 공통 검증** (API-001, 003, 004)
 1. 서명과 만료 시간 확인 → 실패하면 `401 {"error": "invalid or expired access token"}`
@@ -24,17 +42,18 @@
 
 ---
 
-## API-008 JWT 인증 및 검증
+## API-009 기기 토큰 발급 (JWT)
 
-> 확인 필요: **노현석 님** — 시뮬레이터 `Net/JwtAuth.cs`에 로그인·갱신 코드가 이미 있으므로, 요청 URL과 필드 이름을 그 코드에 맞출지 이 초안에 맞출지 정해야 한다.
+> 구현 상태: **구현·배포 완료** (2026-10-02). 9/29 회의에서 JWT 기기 인증이 김승윤 담당으로 정해졌다.
+> 전달 필요: **노현석 님** — 시뮬레이터의 현재 로그인 요청(`POST /auth/login`, `{farmId, deviceId, secret}`)을 이 명세에 맞춰야 한다. 차이는 `docs/design/jwt-auth.md` 4장에 정리했다.
 
-[API ID] API-008
+[API ID] API-009
 [API 이름] 기기 토큰 발급
-[담당] 김승윤 (설계), 장세민 (구현 — 확인 필요)
+[담당] 김승윤
 [방향] 시뮬레이터 → 백엔드
 [Method] POST
 [URL] `/api/v1/auth/token`
-[설명] 등록된 기기가 ID와 비밀값으로 JWT를 발급받는다. 발급받은 토큰으로 API-001, 003, 004를 호출한다.
+[설명] 등록된 기기가 ID와 비밀값으로 JWT를 발급받는다. 발급받은 토큰으로 API-001, 003, 004를 호출한다. 사용자 로그인이 아니라 기기 인증이다.
 [인증] 없음 (이 API로 토큰을 받는다)
 
 [Request Body]
@@ -62,25 +81,28 @@
 
 | 필드명 | 타입 | 설명 |
 |---|---|---|
-| accessToken | String | JWT. 내용: `sub`=gatewayId, `farmId`, `iat`, `exp` |
+| accessToken | String | JWT. 내용: `iss`, `sub`=gatewayId, `farmId`, `iat`, `exp` |
 | tokenType | String | 항상 `Bearer` |
 | expiresIn | Number | 유효 시간(초). 1시간 |
 | farmId | String | 이 기기가 속한 농장. 이후 API URL에 쓴다 |
 
 [HTTP Status]
 - 200: 발급 성공
-- 400: 필드 누락
+- 400: 필드 누락 `{"error": "invalid field: <필드명>"}`
 - 401: ID 또는 비밀값이 틀림 `{"error": "invalid credentials"}`
 - 403: 비활성 기기 `{"error": "gateway inactive"}`
 
 [비고]
 - 재발급 토큰(refresh token)은 두지 않는다. 토큰이 만료돼 401을 받으면 이 API를 다시 호출한다. API-001 명세의 "토큰 버리고 재로그인 후 1회 재시도"와 같은 동작이다.
+- 없는 기기와 틀린 비밀값은 같은 401로 응답한다. 기기 ID가 존재하는지 알 수 없게 하기 위해서다.
+- 기기 비밀값은 서버 환경 변수(`SEED_GATEWAY_SECRET`)로만 관리하고, 시뮬레이터 담당자에게 개인 메시지로 전달한다.
 
 ---
 
 ## API-003 장치 제어 명령 전달
 
-> 확인 필요: **노현석 님** — 시뮬레이터는 이미 3초마다 명령을 조회한다(`Net/BackendClient.cs` `CommandLoop`, `ApplyCommands`). 그 코드가 기대하는 URL과 응답 형식에 맞춰야 한다. 아래 2가지 질문도 함께 확인한다.
+> 구현 상태: 미구현.
+> 전달 필요: **노현석 님** — 노션 API-003(노현석 님 작성)과 다른 점이 있다. 아래 "시뮬레이터 현재 구현과의 차이"를 보고 어느 쪽을 바꿀지 정한다.
 
 시뮬레이터에는 수신 서버가 없으므로, 백엔드가 명령을 대기열에 넣어 두고 시뮬레이터가 주기적으로 **가져가는(polling)** 방식이다.
 
@@ -125,9 +147,19 @@
 - **실행 결과 보고(ACK):** 시뮬레이터가 이미 API-001 텔레메트리에 `commandTrace`(최근 명령 32개의 수락 여부, 처리 직후 장치 상태)를 담아 보낸다. 백엔드는 이것으로 명령 상태를 `ACKED`/`REJECTED`로 바꾼다. **별도의 ACK API는 만들지 않는 것을 제안한다.**
 - **가동 시간:** 병해 대응처럼 "60분 동안 팬 가동"이 필요하면, 시뮬레이터에 타이머를 두지 않고 **백엔드가 60분 뒤 `off` 명령을 다시 넣는다.** 시뮬레이터 수정이 필요 없다.
 - 일정 시간(안: 1분) 안에 전달되지 않은 명령은 `EXPIRED` 처리하고 내려보내지 않는다. 오래된 명령이 한꺼번에 실행되는 것을 막기 위해서다.
-- 노현석 님께 확인할 것:
-  1. 현재 코드의 명령 조회 URL과 응답 필드 이름
-  2. API-001의 `commandDelivery`에 `push`가 있는데, 시뮬레이터가 polling 말고 다른 방식도 지원하는지
+- **수집 주기 조절:** 9/29 회의의 "요청 후 대답 방식"은 이 API로 만들 수 있다. 시뮬레이터는 `actuator: "comm"` 명령으로 센서·사진 전송 주기를 바꾸거나 즉시 전송하게 할 수 있다(노션 API-003의 명령 종류). 수집 방안이 확정되면 여기에 반영한다.
+
+**시뮬레이터 현재 구현과의 차이** (노션 API-003, 디버그 키트 기준)
+
+| 항목 | 이 명세 | 시뮬레이터 현재 구현 | 영향 |
+|---|---|---|---|
+| 조회 경로·응답 틀 | `GET …/commands` → `{"commands": […]}` | 같음 | 없음 |
+| 푸시(SSE) | 없음 | `GET …/commands/stream`이 기본 | 백엔드에 이 경로가 없으면 시뮬레이터가 스스로 폴링으로 내려온다 |
+| 결과 보고 | `commandTrace`(API-001)로 받음 | `POST …/commands/ack {id, status}`도 보냄 | 백엔드에 이 경로가 없으면 시뮬레이터 쪽에서 404가 난다 |
+| 재전송 | 한 번 내려준 명령은 다시 내려주지 않음 | ACK될 때까지 매번 다시 받기를 기대 | 응답이 유실되면 명령이 누락될 수 있다 |
+| 명령 필드 | `id, actuator, action, reason, createdAt` | `id, actuator, action, value, deviceId, cellX, cellZ, issuedUtc` | 시뮬레이터는 모르는 필드를 무시하고, 빠진 `value`는 0, 좌표는 -1(전체)로 본다 |
+
+- 결정 필요: 결과 보고를 `commandTrace`만으로 할지, `POST …/commands/ack`를 추가하고 ACK 전까지 다시 내려줄지. 뒤쪽은 백엔드 API가 하나 늘지만 시뮬레이터를 고칠 필요가 없고 명령 누락에 더 안전하다.
 
 ---
 
@@ -211,9 +243,10 @@
 
 ---
 
-## API-007 로그 조회
+## API-007 제어 로그·최근 사진 조회
 
-> 확인 필요: **수현 님** — 목록 기존 이름은 "병해충 제어 로그 조회"지만, 화면(온도 로그, 토양 수분 로그, 내 작물 확인)에 필요한 조회를 묶어서 3개로 제안한다.
+> 구현 상태: 미구현.
+> 확인 필요: **수현 님** — 온도 로그, 토양 수분 로그, 내 작물 확인 화면에 필요한 값이 빠지지 않았는지. 노션 목록에서는 API-007이 빠져 있어 다시 넣어야 한다.
 
 ### API-007-A 제어 활동 로그
 
@@ -258,41 +291,9 @@
 | result | String | `PENDING` / `DELIVERED` / `ACKED` / `REJECTED` / `EXPIRED` |
 | message | String | 화면에 바로 쓸 수 있는 문장 (백엔드가 만든다) |
 
-### API-007-B 병해충 진단 로그
+### API-007-B 최근 작물 사진
 
 [API ID] API-007-B
-[API 이름] 병해충 관리 로그 조회
-[담당] 김승윤
-[방향] 백엔드 → 모바일
-[Method] GET
-[URL] `/api/v1/farms/{farmId}/diagnoses?size=20`
-[설명] "내 작물 확인" 화면의 병해충 발생 이력과, 그에 따라 자동으로 실행된 조치를 조회한다.
-[인증] 없음
-
-[Response] 200
-```json
-{
-  "diagnoses": [
-    {
-      "diagnosisId": 12,
-      "diagnosedAt": "2026-09-07T09:10:00+09:00",
-      "infected": true,
-      "diseaseName": "잎곰팡이병",
-      "severity": 0.5,
-      "confidence": 0.89,
-      "imageUrl": "/api/v1/images/34/file",
-      "responses": [
-        { "commandId": "cmd_d4e5f6", "actuator": "circFan", "action": "on", "durationMinutes": 60, "result": "ACKED" }
-      ],
-      "guide": "환기를 철저히 하고 병든 잎을 제거하세요"
-    }
-  ]
-}
-```
-
-### API-007-C 최근 작물 사진
-
-[API ID] API-007-C
 [API 이름] 최근 작물 사진 조회
 [담당] 김승윤
 [방향] 백엔드 → 모바일
@@ -314,86 +315,138 @@
 [비고]
 - `/images/{imageId}/file`은 JSON이 아니라 이미지(`image/jpeg`, `image/png`)를 그대로 돌려준다.
 - 평가용 정답(`groundTruth*`)은 앱에 내려보내지 않는다.
-- "다시 촬영" 기능은 구현 여부가 아직 정해지지 않아 넣지 않았다. 구현한다면 백엔드가 시뮬레이터에 촬영 명령을 넣는 방식(API-003)이 된다.
+- "다시 촬영" 기능은 구현 여부가 아직 정해지지 않아 넣지 않았다. 구현한다면 백엔드가 시뮬레이터에 촬영 명령을 넣는 방식(API-003의 `comm` 명령)이 된다.
 
 ---
 
-## API-005 병해충 진단 요청
+## API-008 병해충 진단 이력 조회
 
-> 확인 필요: **김우주 님** — 이 API는 **AI 서버가 제공**하고 백엔드가 호출한다. 아래는 "백엔드가 보내고 받고 싶은 형식"의 제안이다. 경로, 필드 이름, 출력 형식은 AI 쪽 구현에 맞춰 정한다.
+> 구현 상태: 미구현.
+> 확인 필요: **김우주 님, 수현 님** — 노션 API-008(김우주 님 작성)은 모바일이 사진을 직접 올려 진단을 요청하는 `POST /api/diagnoses`와 이력 조회를 담고 있다. 기능 명세상 사진은 시뮬레이터가 보내므로(API-004), 여기서는 **이력 조회만** 둔다. 모바일이 직접 진단을 요청하는 기능을 MVP에 넣을지는 따로 정한다.
 
-[API ID] API-005
-[API 이름] 병해충 진단 요청
-[담당] 김우주 (제공), 김승윤 (호출)
-[방향] 백엔드 → AI 서버
-[Method] POST
-[URL] `{AI 서버 주소}/api/v1/diagnose` (AI 쪽에서 결정)
-[설명] 백엔드가 시뮬레이터에게서 받은 사진을 AI 서버에 보내고, **응답으로 진단 결과를 바로 받는다(동기).**
-[인증] 회의에서 결정 (AI 서버가 외부에 공개되면 `X-API-Key` 헤더 등 공유 키 제안)
+[API ID] API-008
+[API 이름] 병해충 진단 이력 조회
+[담당] 김승윤
+[방향] 백엔드 → 모바일
+[Method] GET
+[URL] `/api/v1/farms/{farmId}/diagnoses?size=20`
+[설명] "내 작물 확인" 화면의 병해충 발생 이력과, 그에 따라 자동으로 실행된 조치를 조회한다.
+[인증] 없음
 
-[Request] `multipart/form-data`
-| 필드명 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| image | File | O | 작물 사진 (jpg/png) |
-| species | String | X | 작물 종류 (`Tomato` 등). 모델이 작물 정보를 쓴다면 전달 |
-
-- **시뮬레이터가 보낸 평가용 정답(`groundTruthPest` 등)은 절대 보내지 않는다** (API-004 명세). 사진만 보고 판단해야 한다.
-
-[Response] 200 (제안)
+[Response] 200
 ```json
 {
-  "infected": true,
-  "diseaseCode": "tomato-A",
-  "diseaseName": "잎곰팡이병",
-  "confidence": 0.89,
-  "severity": 0.5,
-  "boxes": [ { "x": 120, "y": 80, "width": 60, "height": 45 } ],
-  "modelVersion": "yolov8-v1"
+  "diagnoses": [
+    {
+      "diagnosisId": 12,
+      "diagnosedAt": "2026-09-07T09:10:00+09:00",
+      "infected": true,
+      "diseaseCode": "tomato-A",
+      "diseaseName": "잎곰팡이병",
+      "severityLevel": "중기",
+      "confidence": 0.89,
+      "imageUrl": "/api/v1/images/34/file",
+      "responses": [
+        { "commandId": "cmd_d4e5f6", "actuator": "circFan", "action": "on", "durationMinutes": 60, "result": "ACKED" }
+      ],
+      "guide": "환기를 철저히 하고 병든 잎을 제거하세요"
+    }
+  ]
 }
 ```
 
 | 필드명 | 타입 | 설명 |
 |---|---|---|
-| infected | Boolean | 병해 발생 여부 |
-| diseaseCode | String | 병해 코드. **API-004 라벨(`tomato-A` 형식)과 같게** 해 주면 백엔드가 대응 규칙을 바로 찾을 수 있다. 정상이면 `null` |
-| diseaseName | String | 병명 |
-| confidence | Number | 신뢰도 0~1 |
-| severity | Number/String | 중증도. 0~1 수치인지 초기/중기/말기인지 확인 필요 |
-| boxes | Array | 병변 위치 (9/15 회의록의 바운딩 박스). 없으면 생략 가능 |
-| modelVersion | String | 모델 버전 |
+| severityLevel | String | 중증도 단계 `초기` / `중기` / `말기`. AI가 단계로 판정한다. 판정이 없으면 `null` |
+| responses | Array | 이 진단 때문에 자동으로 실행된 제어 명령. 없으면 빈 배열 |
+| guide | String | 권장 조치 문구 |
+
+---
+
+## API-005 병해충 진단 요청
+
+> 구현 상태: **백엔드의 호출 코드는 구현됨** (`ai/AiDiagnosisClient`, 김우주). 사진을 받았을 때 자동으로 호출하는 흐름(API-004 연동)은 미구현.
+> 이 API는 **AI 서버(smartfarm-ai, FastAPI)가 제공**하고 백엔드가 호출한다. 요청·응답 형식은 AI 서버 구현을 따른다.
+
+[API ID] API-005
+[API 이름] 병해충 진단 요청
+[담당] 김우주 (AI 서버), 김승윤 (백엔드 연동)
+[방향] 백엔드 → AI 서버
+[Method] POST
+[URL] `{AI_SERVICE_URL}/diagnose`
+[설명] 백엔드가 사진을 AI 서버에 보내고, **응답으로 진단 결과와 중증도를 바로 받는다(동기).**
+[인증] **JWT** (`Authorization: Bearer`). 방식은 `docs/design/jwt-auth.md` 3장. 전환 전까지는 `X-API-Key` 헤더(`AI_SERVICE_API_KEY`)를 쓴다.
+
+[Request] `multipart/form-data`
+| 필드명 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| image | File | O | 작물 사진 (jpg/png, 백엔드 업로드 한도 20MB) |
+| crop | String | O | 작물. API-004의 `species`를 소문자로 바꾼 값: `tomato`, `pepper`, `cucumber`, `strawberry`, `lettuce` |
+| threshold | Number | X | 탐지 기준값. 기본 0.15 |
+| tiles | Number | X | 사진 분할 수. 기본 1 |
+
+- **시뮬레이터가 보낸 평가용 정답(`groundTruth*`)과 `estimate`는 절대 보내지 않는다** (API-004 명세). 사진과 작물 이름만 보낸다.
+
+[Response] 200
+```json
+{
+  "result": "detected",
+  "crop": "tomato",
+  "detections": [
+    {
+      "class": "tomato_disease18",
+      "confidence": 0.93,
+      "bbox": [120.0, 80.0, 180.0, 125.0],
+      "severity": { "level": "중기", "risk_code": 2, "confidence": 0.71, "low_confidence": false },
+      "diagnosis": { "name_kr": "잎곰팡이병", "prevention_principles": ["환기"] }
+    }
+  ]
+}
+```
+
+| 필드명 | 타입 | 설명 |
+|---|---|---|
+| result | String | `detected` / `no_detection`. 병반이 없어도 200이다 |
+| detections[].class | String | AI 모델 클래스. 백엔드가 팀 병해 코드로 바꾼다 (`tomato_disease18` → `tomato-A`, `ai/DiseaseCatalog`) |
+| detections[].confidence | Number | 신뢰도 0~1 |
+| detections[].bbox | Array | 병변 위치 `[x0, y0, x1, y1]` (원본 픽셀) |
+| detections[].severity | Object | 중증도(API-006). `level`은 초기/중기/말기, `low_confidence`가 true면 참고용 |
+| detections[].diagnosis | Object | AI 지식베이스의 병 정보(원인, 증상, 예방 원칙). 정상 클래스에는 없다 |
+
+[백엔드의 결과 정리] (`ai/DiagnosisResult`)
+- 사진 1장당 진단 1건으로 저장한다. 병이 여러 개 탐지되면 **신뢰도가 가장 높은 병 하나**를 고른다.
+- 저장하는 값: 발생 여부, 병해 코드(`tomato-A`), 병명, 신뢰도, 중증도 단계와 risk_code, 병변 위치.
 
 [HTTP Status]
-- 200: 진단 성공
-- 400: 이미지 형식 오류
-- 500: 추론 실패
+- 200: 진단 성공 (병반이 없어도 200)
+- 401: 인증 실패
+- 그 외: 추론 실패
 
 [비고]
-- 백엔드는 응답을 받으면 `diagnosis`에 저장하고, 병해별 대응 규칙에 따라 제어 명령(API-003)과 앱 알림(FCM)을 만든다.
-- 응답 대기 시간 제한: 안 10초. 실패하면 백엔드가 기록만 남기고 다음 사진에서 다시 시도한다.
-- 김우주 님께 확인할 것: AI 서버를 어디에 띄우는지(같은 EC2인지 별도인지), 요청 형식(multipart인지 base64 JSON인지), 추론 1건에 걸리는 시간
+- 타임아웃: 연결 5초, 응답 30초 (CPU 추론이 몇 초 걸릴 수 있다).
+- 연결 확인: `GET /api/v1/ai/status` → `UP`(200) / `UNAUTHORIZED`, `UNREACHABLE`, `ERROR`(503).
+- 백엔드는 진단 결과를 `diagnosis`에 저장하고, 병해별 대응 규칙에 따라 제어 명령(API-003)과 앱 알림(API-010)을 만든다. AI가 직접 장치를 제어하지 않는다(기능 명세).
+- 결정 필요: 9/29 회의록의 아키텍처 그림에는 AI 서버 안에 "AI 조치사항 DB"가 있다. 병해별 권장 조치를 AI 응답(`diagnosis.prevention_principles`)에서 가져올지, 백엔드의 `disease_response` 테이블에 둘지 정해야 한다. **자동 제어 규칙(팬을 몇 분 켤지)은 백엔드에 둔다.**
 
 ---
 
-## API-006 병해충 진단 결과 전달
-
-> 확인 필요: **김우주 님**
+## API-006 중증도 판정
 
 [API ID] API-006
-[API 이름] 병해충 진단 결과 전달
+[API 이름] 중증도 판정
 [방향] AI 서버 → 백엔드
 
-[제안] **API-005를 동기 방식으로 하면 이 API는 필요 없다.** 진단 결과가 API-005의 응답으로 바로 오기 때문이다.
-- 추론이 오래 걸려서(예: 수십 초) AI 서버가 나중에 백엔드로 결과를 다시 보내야 하는 경우에만 이 API를 만든다.
-- 그 경우 URL 안: `POST /api/v1/diagnoses/{requestId}/result`, 인증은 공유 키. Body는 API-005 응답과 같은 형식으로 한다.
-- 참고: 현재 노션 API-006 본문에는 API-001의 요청 예시가 잘못 붙어 있다.
+- **별도로 호출하지 않는다.** 중증도는 API-005 응답의 `detections[].severity`에 함께 온다.
+- 단계는 초기 / 중기 / 말기이고, `low_confidence`가 true이면 참고용으로만 보여 준다.
 
 ---
 
-## API-009 FCM 토큰 등록 (신규)
+## API-010 푸시 알림 토큰 등록 (신규)
 
-> 확인 필요: **수현 님** — 알림 방식이 FCM으로 정해졌으므로(9/23) 앱의 기기 토큰을 등록하는 API가 필요하다.
+> 구현 상태: 미구현.
+> 확인 필요: **수현 님** — 알림 방식이 FCM으로 정해졌으므로(9/23) 앱의 기기 토큰을 등록하는 API가 필요하다. 노션 목록에 새로 추가해야 한다.
 
-[API ID] API-009
+[API ID] API-010
 [API 이름] 푸시 알림 토큰 등록
 [담당] 김승윤
 [방향] 모바일 → 백엔드
@@ -427,10 +480,10 @@
 
 ---
 
-## 확인 요청 정리
-| 대상 | 확인할 것 |
+## 전달·확인 요청 정리
+| 대상 | 내용 |
 |---|---|
-| 노현석 님 | API-008 로그인 형식(`JwtAuth.cs`), API-003 명령 조회 URL·응답 형식(`BackendClient.cs`), ACK를 `commandTrace`로 대신하는 것, `commandDelivery: push`의 의미, 이미지 전송 주기 |
-| 김우주 님 | API-005 경로·요청·응답 형식, 병해 코드 형식(`tomato-A`), 중증도 형식, 동기 처리 가능 여부(→ API-006 필요 여부), AI 서버 위치와 인증 |
-| 수현 님 | API-002·007 응답에 필요한 값, 그래프 기간, "다시 촬영" 구현 여부, API-009와 알림 형식, Firebase 프로젝트 |
-| 장세민 님 | API-007을 3개로 나누고 API-009를 추가하는 것, JWT 구현 분담 |
+| 노현석 님 | **API-009**: 시뮬레이터 로그인을 `POST /api/v1/auth/token {gatewayId, secret}` 형식으로 변경 (갱신 API 없음, 만료 시 재발급). **API-003**: ACK API를 둘지 결정. 사진 전송 주기 |
+| 김우주 님 | **AI 구간 JWT 전환** (`jwt-auth.md` 3장: 공유 키, 60초 토큰, 전환 순서). 진단 이력 저장 위치(백엔드 `diagnosis` 테이블), 모바일 직접 진단 요청의 MVP 포함 여부, 조치사항을 어디서 가져올지 |
+| 수현 님 | API-002·007·008 응답에 필요한 값, 그래프 주기(9/29 회의: 1시간 또는 30분), "다시 촬영" 구현 여부, API-010과 알림 형식, Firebase 프로젝트 |
+| 장세민 님 | 노션 API 목록 정리: API-007 복구, API-009를 JWT 내용으로 교체, API-010 추가. 수집·저장 방안 확정 |
