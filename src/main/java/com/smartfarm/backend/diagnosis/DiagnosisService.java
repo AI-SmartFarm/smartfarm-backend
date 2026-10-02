@@ -1,5 +1,6 @@
 package com.smartfarm.backend.diagnosis;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,6 +35,7 @@ public class DiagnosisService implements DisposableBean {
 
 	private static final Logger log = LoggerFactory.getLogger(DiagnosisService.class);
 
+	private final ImageService imageService;
 	private final AiDiagnosisClient aiClient;
 	private final DiagnosisRepository diagnosisRepository;
 	private final JsonMapper jsonMapper;
@@ -41,7 +43,8 @@ public class DiagnosisService implements DisposableBean {
 	private final ThreadPoolExecutor executor;
 
 	public DiagnosisService(AiDiagnosisClient aiClient, DiagnosisRepository diagnosisRepository, JsonMapper jsonMapper,
-			Clock clock, DiagnosisProperties properties) {
+			Clock clock, DiagnosisProperties properties, ImageService imageService) {
+		this.imageService = imageService;
 		this.aiClient = aiClient;
 		this.diagnosisRepository = diagnosisRepository;
 		this.jsonMapper = jsonMapper;
@@ -60,7 +63,8 @@ public class DiagnosisService implements DisposableBean {
 		if (crop == null) {
 			return;
 		}
-		Runnable task = () -> diagnose(image, crop, received.bytes());
+		// 대기 중에는 메타데이터만 보유하고 실행 시 디스크에서 사진을 읽는다.
+		Runnable task = () -> diagnose(image, crop);
 		if (executor == null) {
 			task.run();
 			return;
@@ -78,16 +82,16 @@ public class DiagnosisService implements DisposableBean {
 				Limit.of(size));
 	}
 
-	void diagnose(CropImage image, String crop, byte[] bytes) {
+	void diagnose(CropImage image, String crop) {
 		LocalDateTime requestedAt = LocalDateTime.now(clock);
 		long imageId = image.getImageId();
 		DiagnosisResponse response;
 		try {
-			response = aiClient.diagnose(bytes, "image-" + imageId + "." + image.getImageFormat(), crop);
+			response = aiClient.diagnose(imageService.read(image), "image-" + imageId + "." + image.getImageFormat(), crop);
 		}
-		catch (RestClientException | IllegalStateException e) {
-			// 연결 실패·401·5xx·빈 응답. 사진은 남아 있으니 원인을 고친 뒤 다시 진단할 수 있다.
-			log.warn("사진 {} 진단 실패 (AI 호출): {}", imageId, e.getMessage());
+		catch (IOException | RestClientException | IllegalStateException e) {
+			// 파일 읽기·연결 실패·401·5xx·빈 응답. 저장 파일을 삭제하지 않고 실패로 남긴다.
+			log.warn("사진 {} 진단 실패 (사진 읽기·AI 호출): {}", imageId, e.getMessage());
 			save(Diagnosis.failed(imageId, image.getFarmId(), null, requestedAt));
 			return;
 		}

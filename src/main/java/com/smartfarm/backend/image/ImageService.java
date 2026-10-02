@@ -24,8 +24,8 @@ import com.smartfarm.backend.common.ClockConfig;
 @Service
 public class ImageService {
 
-	/** 저장한 사진과 그 바이트. 진단 요청에 파일을 다시 읽지 않도록 같이 넘긴다. */
-	public record Received(CropImage image, byte[] bytes) {
+	/** 저장한 사진의 메타데이터. 진단 대기열에는 이미지 바이트를 보유하지 않는다. */
+	public record Received(CropImage image) {
 	}
 
 	private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -60,7 +60,7 @@ public class ImageService {
 		try {
 			CropImage image = cropImageRepository.save(new CropImage(pathFarmId, capturedAt, request,
 					speciesOrNull(request.species()), relativePath, format, bytes.length, LocalDateTime.now(clock)));
-			return new Received(image, bytes);
+			return new Received(image);
 		}
 		catch (RuntimeException e) {
 			// DB에 남지 않은 파일은 아무도 찾을 수 없으니 지운다.
@@ -77,6 +77,10 @@ public class ImageService {
 	public Optional<Path> file(CropImage image) {
 		Path file = resolve(image.getFilePath());
 		return Files.isRegularFile(file) ? Optional.of(file) : Optional.empty();
+	}
+
+	public byte[] read(CropImage image) throws IOException {
+		return Files.readAllBytes(resolve(image.getFilePath()));
 	}
 
 	private Path resolve(String relativePath) {
