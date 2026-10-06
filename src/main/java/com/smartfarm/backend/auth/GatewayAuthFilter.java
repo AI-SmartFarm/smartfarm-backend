@@ -35,11 +35,12 @@ public class GatewayAuthFilter extends OncePerRequestFilter {
 
 	private static final PathPatternParser PARSER = PathPatternParser.defaultInstance;
 
-	// API-001 텔레메트리, API-004 이미지, API-003 명령 조회
+	// API-001 텔레메트리, API-004 이미지, API-003 명령 조회와 결과 보고
 	private static final List<Protected> PROTECTED = List.of(
 			new Protected("POST", PARSER.parse("/api/v1/farms/{farmId}/telemetry")),
 			new Protected("POST", PARSER.parse("/api/v1/farms/{farmId}/images")),
-			new Protected("GET", PARSER.parse("/api/v1/farms/{farmId}/commands")));
+			new Protected("GET", PARSER.parse("/api/v1/farms/{farmId}/commands")),
+			new Protected("POST", PARSER.parse("/api/v1/farms/{farmId}/commands/ack")));
 
 	private final JwtTokenService tokenService;
 	private final GatewayRepository gatewayRepository;
