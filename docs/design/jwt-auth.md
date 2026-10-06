@@ -46,7 +46,7 @@ sequenceDiagram
 | 재발급 | 재발급 토큰 없음. 만료되면 발급 API를 다시 호출한다 |
 
 ### 2-3. 검증 (요청마다)
-JWT를 요구하는 경로는 기기용 세 가지다: `POST …/telemetry`(API-001), `POST …/images`(API-004), `GET …/commands`(API-003).
+JWT를 요구하는 경로는 기기용 네 가지다: `POST …/telemetry`(API-001), `POST …/images`(API-004), `GET …/commands`와 `POST …/commands/ack`(API-003).
 
 | 순서 | 확인 | 실패 시 응답 |
 |---|---|---|

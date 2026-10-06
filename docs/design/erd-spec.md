@@ -5,7 +5,7 @@
 | 시스템 | AI 기반 개방형 모바일 스마트팜 관리 시스템 — Backend |
 | DBMS | MySQL 8.4 (문자셋 `utf8mb4`, 정렬 `utf8mb4_0900_ai_ci`, 엔진 InnoDB) |
 | 작성 | 김승윤 (백엔드) |
-| 버전 | v0.2 (2026-10-02) — `farm`, `gateway`, `telemetry`는 구현·배포됨. 나머지는 구현하면서 확정 |
+| 버전 | v0.2 (2026-10-02, 구현 상태 갱신 2026-10-06) — `farm`, `gateway`, `telemetry`, `crop_profile`, `control_command`는 구현·배포됨. `crop_image`, `diagnosis`는 PR #5. 나머지는 구현하면서 확정 |
 | 관련 문서 | `jwt-auth.md` (JWT 방식), `docs/api/api-spec-draft.md` (API 명세) |
 | 변경 이력 | v0.2: 진단 중증도를 단계로 변경, 사진에 카메라 ID 추가, 시각 정밀도와 `telemetry` 구현 내용 반영 (10장) |
 
@@ -149,10 +149,10 @@ erDiagram
 | 1 | `farm` | 농장 | 관리 대상 농장. 현재는 `greenhouse-01` 1개 | 전체 | 구현 |
 | 2 | `gateway` | 게이트웨이(기기) | JWT를 발급받는 기기. 현재는 Unity 시뮬레이터 | API-009 | 구현 |
 | 3 | `telemetry` | 환경 데이터 | 온도, 토양 수분 등 센서 이력 | API-001, 002 | 구현 |
-| 4 | `control_command` | 제어 명령 | 명령 대기열 + 제어 이력 + 자동 대응 이력 | API-003, 007, 008 | – |
-| 5 | `crop_image` | 작물 사진 | 시뮬레이터가 보낸 사진의 메타데이터 (파일은 디스크에 저장) | API-004, 007 | – |
-| 6 | `diagnosis` | AI 진단 | 사진별 병해충 진단 결과 | API-005, 006, 008 | – |
-| 7 | `crop_profile` | 작물 기준값 | 작물별 적정 범위와 제어 임계값 | 자동제어 | – |
+| 4 | `control_command` | 제어 명령 | 명령 대기열 + 제어 이력 + 자동 대응 이력 | API-003, 007, 008 | 구현 |
+| 5 | `crop_image` | 작물 사진 | 시뮬레이터가 보낸 사진의 메타데이터 (파일은 디스크에 저장) | API-004, 007 | PR #5 (김우주) |
+| 6 | `diagnosis` | AI 진단 | 사진별 병해충 진단 결과 | API-005, 006, 008 | PR #5 (김우주) |
+| 7 | `crop_profile` | 작물 기준값 | 작물별 적정 범위와 제어 임계값 | 자동제어 | 구현 (토마토만 임시값) |
 | 8 | `disease_response` | 병해 대응 규칙 | 병해별 자동 대응 방식 | 자동 대응 | – |
 | 9 | `fcm_token` | 푸시 토큰 | 알림을 받을 모바일 기기 | API-010 | – |
 
@@ -374,14 +374,14 @@ erDiagram
 
 ## 9. 확정 전 확인할 것
 1. 수집·저장 방안과 `telemetry` 저장 주기 (9/29 회의에서 보류)
-2. `crop_image` 저장 정책. 식물마다 카메라가 있어 주기마다 여러 장이 오므로 디스크 용량 문제가 더 크다
+2. `crop_image` 저장 정책. 식물마다 카메라가 있어 주기마다 여러 장이 온다. PR #5는 받은 사진을 모두 저장하고 모두 진단하므로, 시뮬레이터가 붙기 전에 정책이 필요하다 (안: 카메라별 최신본은 덮어쓰기, 병이 감지된 사진만 이력 보관, 주기 사진 진단은 카메라별 10분에 1장)
 3. 5개 작물의 기준값(`crop_profile`)과 병해별 대응 방식(`disease_response`)
 4. 병해 안내 문구를 AI 응답에서 가져올지 `disease_response.guide`에 둘지
 5. 수동 제어(`MANUAL`)를 구현할지
-6. `control_command`의 결과 반영 방식 (`commandTrace`만 쓸지, ACK API를 둘지 — API-003)
 
 ## 10. 변경 이력
 | 버전 | 날짜 | 내용 |
 |---|---|---|
 | v0.1 | 2026-09-28 | 초안 |
 | v0.2 | 2026-10-02 | `farm`·`gateway`·`telemetry` 구현 반영. `telemetry.raw_payload` 제외(저장 여부 미정). 시각 컬럼을 `DATETIME(6)`로 통일. `diagnosis.severity`(숫자)를 `severity_level`·`severity_risk_code`·`severity_low_confidence`로 변경하고 `boxes` 추가(AI 응답 형식에 맞춤). `crop_image.camera_id` 추가. 관련 API 번호를 노션 목록에 맞춤(JWT = API-009, FCM = API-010) |
+| v0.2 (상태 갱신) | 2026-10-06 | `crop_profile`·`control_command` 구현·배포(PR #6). `control_command`의 결과는 ACK API(API-003-B)로 받기로 확정. `crop_image`·`diagnosis`는 PR #5에 구현됨(김우주) |
