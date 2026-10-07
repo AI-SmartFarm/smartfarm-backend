@@ -25,6 +25,7 @@ public class ControlCommand {
 	public static final String EXPIRED = "EXPIRED";
 
 	public static final String SOURCE_AUTO = "AUTO";
+	public static final String SOURCE_AI = "AI";
 
 	@Id
 	@Column(length = 40)
@@ -85,6 +86,23 @@ public class ControlCommand {
 		this.expiresAt = expiresAt;
 	}
 
+	/** 병해 대응 명령. 원인 진단과 가동 시간을 함께 남겨 진단 이력(API-008)에서 대응 내역을 보여 줄 수 있게 한다. */
+	public static ControlCommand pestResponse(String commandId, String farmId, String actuator, long diagnosisId,
+			int durationSec, LocalDateTime createdAt, LocalDateTime expiresAt) {
+		ControlCommand command = new ControlCommand(commandId, farmId, actuator, "on", SOURCE_AI, "PEST_RESPONSE",
+				null, createdAt, expiresAt);
+		command.diagnosisId = diagnosisId;
+		command.durationSec = durationSec;
+		return command;
+	}
+
+	/** 가동 시간이 정해진 켜기 명령이 아직 유효한지. 거절·만료된 명령은 장치를 켜지 못했으므로 유지 시간으로 보지 않는다. */
+	public boolean holdsOnAt(LocalDateTime now) {
+		boolean effective = !REJECTED.equals(status) && !EXPIRED.equals(status);
+		return effective && "on".equals(action) && durationSec != null
+				&& now.isBefore(createdAt.plusSeconds(durationSec));
+	}
+
 	/** 아직 시뮬레이터의 결과 보고를 받지 못한 상태. 이 동안에는 조회할 때마다 다시 내려준다. */
 	public boolean isAwaitingAck() {
 		return PENDING.equals(status) || DELIVERED.equals(status);
@@ -138,6 +156,18 @@ public class ControlCommand {
 
 	public Double getTriggerValue() {
 		return triggerValue;
+	}
+
+	public String getSource() {
+		return source;
+	}
+
+	public Long getDiagnosisId() {
+		return diagnosisId;
+	}
+
+	public Integer getDurationSec() {
+		return durationSec;
 	}
 
 	public String getStatus() {

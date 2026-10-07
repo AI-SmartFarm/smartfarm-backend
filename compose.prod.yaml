@@ -11,6 +11,9 @@ services:
       # t3.small(2GB)에 MySQL과 같이 올리므로 힙 상한을 둔다.
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
     mem_limit: 768m
+    # API-004 사진 파일. 컨테이너를 새로 만들어도 남게 볼륨에 둔다.
+    volumes:
+      - image-data:/app/data/images
     depends_on:
       mysql:
         condition: service_healthy
@@ -43,3 +46,4 @@ services:
 
 volumes:
   mysql-data:
+  image-data:
