@@ -32,6 +32,7 @@ public class DiseaseResponse {
 
 	private Integer durationMin;
 
+	/** 안내 문구는 AI 응답이 기본이다. 이 값은 AI 근거 자료가 없는 병에만 대신 쓴다. */
 	@Column(length = 255)
 	private String guide;
 

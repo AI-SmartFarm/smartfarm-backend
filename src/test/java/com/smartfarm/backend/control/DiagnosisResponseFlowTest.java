@@ -59,6 +59,11 @@ class DiagnosisResponseFlowTest {
 			 "detections": [{"class": "tomato_disease18", "confidence": 0.91, "bbox": [1.0, 2.0, 3.0, 4.0],
 			   "severity": {"level": "초기", "risk_code": 1, "confidence": 0.7, "low_confidence": false}}]}
 			""";
+	private static final String LEAF_MOLD_WITH_GUIDE = """
+			{"result": "detected", "crop": "tomato",
+			 "detections": [{"class": "tomato_disease18", "confidence": 0.91, "bbox": [1.0, 2.0, 3.0, 4.0],
+			   "diagnosis": {"name_kr": "토마토잎곰팡이병", "prevention_principles": ["습도를 낮춘다", " ", "병든 잎을 없앤다"]}}]}
+			""";
 	private static final String TYLCV = """
 			{"result": "detected", "crop": "tomato",
 			 "detections": [{"class": "tomato_disease19", "confidence": 0.88, "bbox": [1.0, 2.0, 3.0, 4.0]}]}
@@ -247,6 +252,16 @@ class DiagnosisResponseFlowTest {
 		ControlCommand command = commands().getFirst();
 		assertThat(command.getReason()).isEqualTo("PEST_RESPONSE");
 		assertThat(command.getSource()).isEqualTo(ControlCommand.SOURCE_AI);
+	}
+
+	@Test
+	void 안내_문구는_AI의_예방_방제_원칙을_쓰고_장치_대응은_그대로_한다() throws Exception {
+		aiResponse.set(LEAF_MOLD_WITH_GUIDE);
+		sendImage("pest", camera("w"));
+
+		JsonNode diagnosis = latestDiagnoses(1).get(0);
+		assertThat(diagnosis.get("guide").asString()).isEqualTo("습도를 낮춘다\n병든 잎을 없앤다");
+		assertThat(diagnosis.get("responses")).hasSize(1);
 	}
 
 	@Test

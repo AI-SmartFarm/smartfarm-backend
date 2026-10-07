@@ -36,7 +36,8 @@ public class DiagnosisController {
 	/**
 	 * API 명세 API-008의 diagnoses[] 항목.
 	 * imageUrl은 사진 파일이 남아 있을 때만 준다. 정상 사진은 카메라별 최신 1장만 파일을 남기기 때문이다.
-	 * guide는 백엔드의 병해 대응 규칙(disease_response)에서 가져온다. 규칙이 없는 병해는 null이다.
+	 * guide는 AI가 준 예방·방제 원칙이다. AI 근거 자료가 없는 병(예: 고추점무늬병)은 백엔드 병해 대응 규칙
+	 * (disease_response)의 문구로 대신하고, 그것도 없으면 null이다.
 	 */
 	public record Item(
 			long diagnosisId,
@@ -88,9 +89,12 @@ public class DiagnosisController {
 				.filter(imageService::hasFile)
 				.map(image -> "/api/v1/images/" + image.getImageId() + "/file")
 				.orElse(null);
-		String guide = d.isInfected()
-				? pestResponseService.guideRule(d.getDiseaseCode()).map(DiseaseResponse::getGuide).orElse(null)
-				: null;
+		String guide = null;
+		if (d.isInfected()) {
+			guide = d.getGuide() != null
+					? d.getGuide()
+					: pestResponseService.guideRule(d.getDiseaseCode()).map(DiseaseResponse::getGuide).orElse(null);
+		}
 		return new Item(d.getDiagnosisId(), d.getDiagnosedAt().atZone(ClockConfig.ZONE).toOffsetDateTime(),
 				d.isInfected(), d.getDiseaseCode(), d.getDiseaseName(), d.getSeverityLevel(), d.getSeverityLowConfidence(),
 				d.getConfidence(), imageUrl, responses, guide);

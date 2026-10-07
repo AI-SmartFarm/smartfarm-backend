@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-10-07 — 병해충 안내 문구(guide)를 AI 응답에서 가져오기 (김승윤)
+- PR #8 (`feat/ai-guide`)
+- 배경: 제안서 아키텍처는 병해충 조치사항을 AI 서버("AI 조치사항 DB")가 맡는다. 그에 맞춰 안내 문구는 AI가, 장치 대응(순환팬 60분 등)은 백엔드가 정하도록 나눴다(기능 명세 F-04).
+- API-008 `guide`: AI 응답 `detections[].diagnosis.prevention_principles`(예방·방제 원칙 목록)를 줄바꿈으로 이은 문자열. 형식은 그대로 문자열이라 앱 수정은 필요 없다.
+  - AI 근거 자료가 없어 목록이 비어 오는 병(예: 고추점무늬병)은 `disease_response`의 문구로 대신하고, 그것도 없으면 `null`
+- `diagnosis` 테이블에 `guide`(TEXT) 컬럼 추가. `ddl-auto=update`라 배포 시 자동으로 생기고, 기존 진단은 `null`이라 규칙 문구로 대신 나간다.
+- 바꾼 코드: `ai/DiagnosisResult`(guide 추가), `diagnosis/Diagnosis`(컬럼), `diagnosis/DiagnosisController`(AI 문구 우선), `control/DiseaseResponse`(주석)
+- 검증: 테스트 71개 통과(실제 AI가 필요한 2개는 건너뜀). 새 테스트 1개(AI 문구 사용, 빈 문장 제외).
+
 ## 2026-10-07 — 사진 수신·AI 진단(김우주) 통합, 사진 저장 정책, 병해 자동 대응
 - PR #7 (`feat/diagnosis-response`). 김우주 PR #4·#5는 여기에 포함돼 닫음
 - 담당: 김우주(사진 수신·진단, PR #5에서 가져옴), 김승윤(통합·저장 정책·자동 대응)

@@ -57,6 +57,10 @@ public class Diagnosis {
 	@Column(columnDefinition = "json")
 	private String boxes;
 
+	/** AI가 준 예방·방제 원칙(DiagnosisResult.guide). 진단 당시 문구를 남기려고 응답에서 꺼내 따로 저장한다. */
+	@Column(columnDefinition = "text")
+	private String guide;
+
 	@Column(length = MODEL_VERSION_LENGTH)
 	private String modelVersion;
 
@@ -84,6 +88,7 @@ public class Diagnosis {
 		d.severityRiskCode = result.severityRiskCode();
 		d.severityLowConfidence = result.infected() ? result.severityLowConfidence() : null;
 		d.boxes = boxesJson;
+		d.guide = result.guide();
 		d.modelVersion = truncate(modelVersion);
 		d.rawResult = rawResultJson;
 		d.requestedAt = requestedAt;
@@ -148,6 +153,10 @@ public class Diagnosis {
 
 	public String getBoxes() {
 		return boxes;
+	}
+
+	public String getGuide() {
+		return guide;
 	}
 
 	public String getModelVersion() {
