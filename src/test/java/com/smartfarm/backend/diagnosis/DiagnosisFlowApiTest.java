@@ -28,6 +28,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.smartfarm.backend.command.ControlCommandRepository;
 import com.smartfarm.backend.image.CropImageRepository;
 import com.sun.net.httpserver.HttpServer;
 
@@ -75,6 +76,9 @@ class DiagnosisFlowApiTest {
 	@Autowired
 	private DiagnosisRepository diagnosisRepository;
 
+	@Autowired
+	private ControlCommandRepository commandRepository;
+
 	@DynamicPropertySource
 	static void properties(DynamicPropertyRegistry registry) {
 		registry.add("ai.service.base-url", () -> "http://localhost:" + AI.getAddress().getPort());
@@ -120,6 +124,9 @@ class DiagnosisFlowApiTest {
 
 	@BeforeEach
 	void resetAi() {
+		// 병해 대응은 60분 유지되므로, 로컬 DB에 남은 이전 실행의 명령이 결과를 바꾸지 않게 지운다.
+		commandRepository.deleteAll(commandRepository.findAll().stream()
+				.filter(c -> "diag-farm".equals(c.getFarmId())).toList());
 		aiStatus.set(200);
 		aiCalls.set(0);
 		aiBody.set(null);
@@ -180,7 +187,12 @@ class DiagnosisFlowApiTest {
 		assertThat(d.get("severityLowConfidence").asBoolean()).isFalse();
 		assertThat(d.get("confidence").asDouble()).isEqualTo(0.93);
 		assertThat(d.get("diagnosedAt").asString()).endsWith("+09:00");
-		assertThat(d.get("responses").isEmpty()).isTrue();
+		// 잎곰팡이병은 병해 대응 규칙에 따라 순환팬을 60분 켠다(F-04).
+		assertThat(d.get("responses")).hasSize(1);
+		assertThat(d.get("responses").get(0).get("actuator").asString()).isEqualTo("circFan");
+		assertThat(d.get("responses").get(0).get("action").asString()).isEqualTo("on");
+		assertThat(d.get("responses").get(0).get("durationMinutes").asInt()).isEqualTo(60);
+		assertThat(d.get("guide").asString()).contains("환기");
 
 		Diagnosis saved = diagnosisRepository.findById(d.get("diagnosisId").asLong()).orElseThrow();
 		assertThat(saved.getModelVersion()).isEqualTo("rfdetr-v5_severity-v2");

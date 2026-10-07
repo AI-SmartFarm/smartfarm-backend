@@ -20,6 +20,7 @@ import com.smartfarm.backend.ai.AiDiagnosisClient;
 import com.smartfarm.backend.ai.DiagnosisResponse;
 import com.smartfarm.backend.ai.DiagnosisResult;
 import com.smartfarm.backend.ai.DiseaseCatalog;
+import com.smartfarm.backend.control.PestResponseService;
 import com.smartfarm.backend.image.CropImage;
 import com.smartfarm.backend.image.ImageService;
 
@@ -36,6 +37,7 @@ public class DiagnosisService implements DisposableBean {
 	private static final Logger log = LoggerFactory.getLogger(DiagnosisService.class);
 
 	private final ImageService imageService;
+	private final PestResponseService pestResponseService;
 	private final AiDiagnosisClient aiClient;
 	private final DiagnosisRepository diagnosisRepository;
 	private final JsonMapper jsonMapper;
@@ -43,8 +45,9 @@ public class DiagnosisService implements DisposableBean {
 	private final ThreadPoolExecutor executor;
 
 	public DiagnosisService(AiDiagnosisClient aiClient, DiagnosisRepository diagnosisRepository, JsonMapper jsonMapper,
-			Clock clock, DiagnosisProperties properties, ImageService imageService) {
+			Clock clock, DiagnosisProperties properties, ImageService imageService, PestResponseService pestResponseService) {
 		this.imageService = imageService;
+		this.pestResponseService = pestResponseService;
 		this.aiClient = aiClient;
 		this.diagnosisRepository = diagnosisRepository;
 		this.jsonMapper = jsonMapper;
@@ -107,17 +110,50 @@ public class DiagnosisService implements DisposableBean {
 			save(Diagnosis.failed(imageId, image.getFarmId(), raw, requestedAt));
 			return;
 		}
-		save(Diagnosis.succeeded(imageId, image.getFarmId(), result, jsonMapper.writeValueAsString(result.boxes()),
-				response.modelVersion(), raw, requestedAt, LocalDateTime.now(clock)));
+		Diagnosis saved = save(Diagnosis.succeeded(imageId, image.getFarmId(), result,
+				jsonMapper.writeValueAsString(result.boxes()), response.modelVersion(), raw, requestedAt,
+				LocalDateTime.now(clock)));
+		if (saved != null) {
+			afterDiagnosis(image, saved);
+		}
 	}
 
-	private void save(Diagnosis diagnosis) {
+	/** 저장에 실패하면 null. */
+	private Diagnosis save(Diagnosis diagnosis) {
 		try {
-			diagnosisRepository.save(diagnosis);
+			return diagnosisRepository.save(diagnosis);
 		}
 		catch (RuntimeException e) {
 			// 백그라운드 스레드의 예외는 아무도 받지 않으므로 여기서 남긴다.
 			log.error("사진 {} 진단 저장 실패", diagnosis.getImageId(), e);
+			return null;
+		}
+	}
+
+	/** 감염이면 병해 자동 대응(F-04), 정상이면 같은 카메라의 이전 정상 사진 파일을 정리한다. */
+	private void afterDiagnosis(CropImage image, Diagnosis diagnosis) {
+		try {
+			if (diagnosis.isInfected()) {
+				pestResponseService.respond(diagnosis.getFarmId(), diagnosis.getDiagnosisId(), diagnosis.getDiseaseCode());
+			}
+			else {
+				pruneHealthyPhotos(image);
+			}
+		}
+		catch (RuntimeException e) {
+			log.error("사진 {} 진단 후처리 실패", image.getImageId(), e);
+		}
+	}
+
+	/**
+	 * 정상으로 진단된 사진은 카메라별 최신 1장만 파일을 남긴다. 병이 감지된 사진과 진단에 실패한 사진은 지우지 않는다.
+	 * 식물마다 카메라가 있어 정상 사진까지 모두 남기면 디스크가 프로젝트 기간을 버티지 못한다(ERD 9-2).
+	 */
+	private void pruneHealthyPhotos(CropImage image) {
+		for (CropImage previous : imageService.previousOfCamera(image)) {
+			diagnosisRepository.findByImageId(previous.getImageId())
+					.filter(d -> d.getDiagnosedAt() != null && !d.isInfected())
+					.ifPresent(d -> imageService.deleteFile(previous));
 		}
 	}
 

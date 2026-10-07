@@ -13,4 +13,9 @@ public interface ControlCommandRepository extends JpaRepository<ControlCommand, 
 	Optional<ControlCommand> findFirstByFarmIdAndActuatorOrderByCreatedAtDesc(String farmId, String actuator);
 
 	Optional<ControlCommand> findByCommandIdAndFarmId(String commandId, String farmId);
+
+	Optional<ControlCommand> findFirstByFarmIdAndActuatorAndSourceOrderByCreatedAtDesc(String farmId, String actuator,
+			String source);
+
+	List<ControlCommand> findByDiagnosisIdInOrderByCreatedAtAsc(Collection<Long> diagnosisIds);
 }

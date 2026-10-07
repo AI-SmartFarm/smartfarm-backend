@@ -19,6 +19,7 @@ import org.springframework.web.client.RestClientException;
 
 import com.smartfarm.backend.ai.AiDiagnosisClient;
 import com.smartfarm.backend.ai.DiagnosisResponse;
+import com.smartfarm.backend.control.PestResponseService;
 import com.smartfarm.backend.image.CropImage;
 import com.smartfarm.backend.image.ImageService;
 
@@ -59,7 +60,7 @@ class DiagnosisQueueTest {
             return new DiagnosisResponse("no_detection", "tomato", null, null, List.of(), "test");
         });
         DiagnosisService service = new DiagnosisService(ai, repository, JsonMapper.builder().build(),
-                Clock.systemUTC(), new DiagnosisProperties(true, 1), images);
+                Clock.systemUTC(), new DiagnosisProperties(true, 1), images, mock(PestResponseService.class));
         try {
             service.request(new ImageService.Received(one));
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
@@ -100,7 +101,7 @@ class DiagnosisQueueTest {
         when(ai.diagnose(any(byte[].class), eq("image-3.jpg"), eq("tomato")))
                 .thenReturn(new DiagnosisResponse("no_detection", "tomato", null, null, List.of(), "test"));
         DiagnosisService service = new DiagnosisService(ai, repository, JsonMapper.builder().build(),
-                Clock.systemUTC(), new DiagnosisProperties(true, 3), images);
+                Clock.systemUTC(), new DiagnosisProperties(true, 3), images, mock(PestResponseService.class));
         try {
             service.request(new ImageService.Received(missing));
             service.request(new ImageService.Received(failedAi));

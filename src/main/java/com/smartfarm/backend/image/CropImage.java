@@ -111,6 +111,10 @@ public class CropImage {
 		return capturedAt;
 	}
 
+	public String getCameraId() {
+		return cameraId;
+	}
+
 	/** 식물이 찍히지 않았으면 null이다. 이때는 진단하지 않는다. */
 	public String getSpecies() {
 		return species;

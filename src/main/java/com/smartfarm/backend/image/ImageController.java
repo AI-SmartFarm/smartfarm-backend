@@ -1,6 +1,7 @@
 package com.smartfarm.backend.image;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.core.io.FileSystemResource;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.smartfarm.backend.common.BadRequestException;
 import com.smartfarm.backend.diagnosis.DiagnosisService;
 
 import jakarta.validation.Valid;
@@ -34,6 +36,16 @@ public class ImageController {
 
 	@PostMapping("/api/v1/farms/{farmId}/images")
 	public Map<String, Object> receive(@PathVariable String farmId, @Valid @RequestBody ImageRequest request) {
+		if (!farmId.equals(request.farmId())) {
+			throw new BadRequestException("farmId mismatch");
+		}
+		if (!imageService.shouldStore(farmId, request)) {
+			// 저장하지 않은 주기 사진도 시뮬레이터에는 정상 응답한다. 시뮬레이터는 file을 로그에만 쓴다.
+			Map<String, Object> skipped = new LinkedHashMap<>();
+			skipped.put("ok", true);
+			skipped.put("file", null);
+			return skipped;
+		}
 		// receive()의 트랜잭션이 끝난 뒤 진단을 요청해야 진단 스레드가 커밋 전의 사진을 보지 않는다.
 		ImageService.Received received = imageService.receive(farmId, request);
 		diagnosisService.request(received);

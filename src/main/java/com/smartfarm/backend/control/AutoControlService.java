@@ -38,15 +38,32 @@ public class AutoControlService {
 		}
 
 		if (snapshot.airTempC() != null) {
-			Decision fan = Hysteresis.whenHigh(snapshot.airTempC(), profile.getFanOnTempC(), profile.getFanOffTempC(),
-					snapshot.circFanOn());
-			issue(snapshot.farmId(), CIRC_FAN, fan, "TEMP_HIGH", "TEMP_NORMAL", snapshot.airTempC());
+			evaluateFan(snapshot, profile);
 		}
 		if (snapshot.soilMoisturePct() != null) {
 			Decision pump = Hysteresis.whenLow(snapshot.soilMoisturePct(), profile.getIrrigationOnPct(),
 					profile.getIrrigationOffPct(), snapshot.waterPumpOn());
 			issue(snapshot.farmId(), WATER_PUMP, pump, "SOIL_LOW", "SOIL_ENOUGH", snapshot.soilMoisturePct());
 		}
+	}
+
+	/**
+	 * 병해 대응으로 켜 둔 유지 시간 동안은 온도가 낮아도 끄지 않는다.
+	 * 유지 시간이 끝났을 때 온도가 두 기준 사이면 히스테리시스는 "유지"를 고르므로 팬이 계속 켜져 있게 된다.
+	 * 그래서 끝난 직후에는 켜는 기준보다 낮으면 따로 끈다.
+	 */
+	private void evaluateFan(TelemetrySnapshot snapshot, CropProfile profile) {
+		String farmId = snapshot.farmId();
+		double temp = snapshot.airTempC();
+		if (commandService.isHeldOn(farmId, CIRC_FAN)) {
+			return;
+		}
+		if (snapshot.circFanOn() && temp < profile.getFanOnTempC() && commandService.lastWasEndedPestHold(farmId, CIRC_FAN)) {
+			commandService.enqueueIfIdle(farmId, CIRC_FAN, "off", ControlCommand.SOURCE_AUTO, "PEST_RESPONSE_END", temp);
+			return;
+		}
+		Decision fan = Hysteresis.whenHigh(temp, profile.getFanOnTempC(), profile.getFanOffTempC(), snapshot.circFanOn());
+		issue(farmId, CIRC_FAN, fan, "TEMP_HIGH", "TEMP_NORMAL", temp);
 	}
 
 	private void issue(String farmId, String actuator, Decision decision, String onReason, String offReason,

@@ -5,12 +5,14 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -34,12 +36,14 @@ public class ImageService {
 	private final CropImageRepository cropImageRepository;
 	private final Path storageDir;
 	private final int maxBytes;
+	private final Duration routineInterval;
 	private final Clock clock;
 
 	public ImageService(CropImageRepository cropImageRepository, ImageProperties properties, Clock clock) {
 		this.cropImageRepository = cropImageRepository;
 		this.storageDir = Path.of(properties.storageDir()).toAbsolutePath().normalize();
 		this.maxBytes = properties.maxBytes();
+		this.routineInterval = Duration.ofSeconds(properties.routineIntervalSeconds());
 		this.clock = clock;
 	}
 
@@ -67,6 +71,39 @@ public class ImageService {
 			deleteQuietly(file);
 			throw e;
 		}
+	}
+
+	/**
+	 * 감염 순간(pest)·사용자 요청(request) 사진은 항상 저장한다. 병 감지는 감염 순간 사진이 따로 오므로
+	 * 주기(routine) 사진은 같은 카메라의 직전 사진 뒤로 간격이 지났을 때만 저장해도 늦어지지 않는다.
+	 */
+	public boolean shouldStore(String farmId, ImageRequest request) {
+		if (!"routine".equals(request.trigger())) {
+			return true;
+		}
+		LocalDateTime after = LocalDateTime.now(clock).minus(routineInterval);
+		String cameraId = request.cameraId();
+		return cameraId == null || cameraId.isBlank()
+				? !cropImageRepository.existsByFarmIdAndCameraIdIsNullAndReceivedAtAfter(farmId, after)
+				: !cropImageRepository.existsByFarmIdAndCameraIdAndReceivedAtAfter(farmId, cameraId, after);
+	}
+
+	/** 같은 카메라의 직전 사진들. 정상 사진 파일 정리에 쓴다. */
+	public List<CropImage> previousOfCamera(CropImage image) {
+		if (image.getCameraId() == null) {
+			return List.of();
+		}
+		return cropImageRepository.findTop20ByFarmIdAndCameraIdAndImageIdLessThanOrderByImageIdDesc(image.getFarmId(),
+				image.getCameraId(), image.getImageId());
+	}
+
+	/** 메타데이터(crop_image)는 남기고 파일만 지운다. 이후 파일 조회는 404가 된다. */
+	public void deleteFile(CropImage image) {
+		deleteQuietly(resolve(image.getFilePath()));
+	}
+
+	public boolean hasFile(CropImage image) {
+		return Files.isRegularFile(resolve(image.getFilePath()));
 	}
 
 	public Optional<CropImage> find(long imageId) {
