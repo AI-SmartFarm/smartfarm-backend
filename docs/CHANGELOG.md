@@ -7,7 +7,7 @@
 ---
 
 ## 2026-10-07 — 병해충 안내 문구(guide)를 AI 응답에서 가져오기 (김승윤)
-- 브랜치 `feat/ai-guide` (PR 번호는 merge 후 기입)
+- PR #8 (`feat/ai-guide`)
 - 배경: 제안서 아키텍처는 병해충 조치사항을 AI 서버("AI 조치사항 DB")가 맡는다. 그에 맞춰 안내 문구는 AI가, 장치 대응(순환팬 60분 등)은 백엔드가 정하도록 나눴다(기능 명세 F-04).
 - API-008 `guide`: AI 응답 `detections[].diagnosis.prevention_principles`(예방·방제 원칙 목록)를 줄바꿈으로 이은 문자열. 형식은 그대로 문자열이라 앱 수정은 필요 없다.
   - AI 근거 자료가 없어 목록이 비어 오는 병(예: 고추점무늬병)은 `disease_response`의 문구로 대신하고, 그것도 없으면 `null`
