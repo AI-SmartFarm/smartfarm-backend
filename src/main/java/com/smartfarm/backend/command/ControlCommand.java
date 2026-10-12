@@ -99,7 +99,8 @@ public class ControlCommand {
 	/** 가동 시간이 정해진 켜기 명령이 아직 유효한지. 거절·만료된 명령은 장치를 켜지 못했으므로 유지 시간으로 보지 않는다. */
 	public boolean holdsOnAt(LocalDateTime now) {
 		boolean effective = !REJECTED.equals(status) && !EXPIRED.equals(status);
-		return effective && "on".equals(action) && durationSec != null
+		// ACK된 명령의 가동 시간은 TTL보다 길 수 있다. 결과 대기 중인 명령만 TTL을 검사한다.
+		return effective && !(isAwaitingAck() && isExpiredAt(now)) && "on".equals(action) && durationSec != null
 				&& now.isBefore(createdAt.plusSeconds(durationSec));
 	}
 
@@ -126,6 +127,10 @@ public class ControlCommand {
 	/** 이미 결과를 받은 명령에 같은 ACK가 다시 와도 처음 결과를 유지한다(시뮬레이터가 ACK를 재전송할 수 있다). */
 	public void acknowledge(boolean applied, LocalDateTime now) {
 		if (!isAwaitingAck()) {
+			return;
+		}
+		if (isExpiredAt(now)) {
+			markExpired();
 			return;
 		}
 		status = applied ? ACKED : REJECTED;

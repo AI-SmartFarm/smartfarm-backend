@@ -62,6 +62,7 @@ class DiagnosisFlowApiTest {
 	private static final AtomicReference<String> aiBody = new AtomicReference<>();
 	private static final AtomicInteger aiCalls = new AtomicInteger();
 	private static final AtomicInteger aiStatus = new AtomicInteger(200);
+	private static final AtomicReference<String> aiResponse = new AtomicReference<>(AI_DETECTED);
 	private static final Path STORAGE = tempDir();
 
 	@Autowired
@@ -93,7 +94,7 @@ class DiagnosisFlowApiTest {
 				aiCalls.incrementAndGet();
 				aiBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1)
 						+ "\nX-API-Key: " + exchange.getRequestHeaders().getFirst("X-API-Key"));
-				byte[] body = (aiStatus.get() == 200 ? AI_DETECTED : "{\"detail\": \"boom\"}")
+				byte[] body = (aiStatus.get() == 200 ? aiResponse.get() : "{\"detail\": \"boom\"}")
 						.getBytes(StandardCharsets.UTF_8);
 				exchange.getResponseHeaders().add("Content-Type", "application/json");
 				exchange.sendResponseHeaders(aiStatus.get(), body.length);
@@ -128,6 +129,7 @@ class DiagnosisFlowApiTest {
 		commandRepository.deleteAll(commandRepository.findAll().stream()
 				.filter(c -> "diag-farm".equals(c.getFarmId())).toList());
 		aiStatus.set(200);
+		aiResponse.set(AI_DETECTED);
 		aiCalls.set(0);
 		aiBody.set(null);
 	}
@@ -230,6 +232,23 @@ class DiagnosisFlowApiTest {
 		assertThat(failed.isInfected()).isFalse();
 		// 실패한 진단은 이력에 나오지 않는다.
 		assertThat(latestId()).isEqualTo(beforeHistory);
+	}
+
+	@Test
+	void AI가_잘못된_탐지를_보내면_실패를_기록하고_사진을_보존한다() throws Exception {
+		aiResponse.set("""
+				{"result":"detected","crop":"tomato","detections":[{"confidence":0.9,"bbox":[0,0,1,1]}]}
+				""");
+		long before = diagnosisRepository.count();
+		long beforeHistory = latestId();
+		send(image("Tomato", JPEG));
+		assertThat(diagnosisRepository.count()).isEqualTo(before + 1);
+		Diagnosis failed = diagnosisRepository.findAll().stream()
+				.max((a, b) -> Long.compare(a.getDiagnosisId(), b.getDiagnosisId())).orElseThrow();
+		assertThat(failed.getDiagnosedAt()).isNull();
+		assertThat(latestId()).isEqualTo(beforeHistory);
+		mockMvc.perform(get("/api/v1/images/" + failed.getImageId() + "/file"))
+				.andExpect(status().isOk()).andExpect(content().bytes(JPEG));
 	}
 
 	private long latestId() throws Exception {

@@ -19,6 +19,7 @@ import org.springframework.web.client.RestClientException;
 
 import com.smartfarm.backend.ai.AiDiagnosisClient;
 import com.smartfarm.backend.ai.DiagnosisResponse;
+import com.smartfarm.backend.ai.Detection;
 import com.smartfarm.backend.control.PestResponseService;
 import com.smartfarm.backend.image.CropImage;
 import com.smartfarm.backend.image.ImageService;
@@ -92,27 +93,34 @@ class DiagnosisQueueTest {
             saved.add(d);
             return d;
         });
-        CropImage missing = image(1), failedAi = image(2), good = image(3);
+        CropImage missing = image(1), failedAi = image(2), malformed = image(3), good = image(4);
         when(images.read(missing)).thenThrow(new IOException("missing file"));
         when(images.read(failedAi)).thenReturn(new byte[] {2});
-        when(images.read(good)).thenReturn(new byte[] {3});
+        when(images.read(malformed)).thenReturn(new byte[] {3});
+        when(images.read(good)).thenReturn(new byte[] {4});
         when(ai.diagnose(any(byte[].class), eq("image-2.jpg"), eq("tomato")))
                 .thenThrow(new RestClientException("AI unavailable"));
         when(ai.diagnose(any(byte[].class), eq("image-3.jpg"), eq("tomato")))
+                .thenReturn(new DiagnosisResponse("detected", "tomato", null, null,
+                        List.of(new Detection(null, 0.9, List.of(0.0, 0.0, 1.0, 1.0), null, null)), "test"));
+        when(ai.diagnose(any(byte[].class), eq("image-4.jpg"), eq("tomato")))
                 .thenReturn(new DiagnosisResponse("no_detection", "tomato", null, null, List.of(), "test"));
         DiagnosisService service = new DiagnosisService(ai, repository, JsonMapper.builder().build(),
-                Clock.systemUTC(), new DiagnosisProperties(true, 3), images, mock(PestResponseService.class));
+                Clock.systemUTC(), new DiagnosisProperties(true, 4), images, mock(PestResponseService.class));
         try {
             service.request(new ImageService.Received(missing));
             service.request(new ImageService.Received(failedAi));
+            service.request(new ImageService.Received(malformed));
             service.request(new ImageService.Received(good));
         } finally {
             service.destroy();
         }
-        assertThat(saved).hasSize(3);
+        assertThat(saved).hasSize(4);
         assertThat(saved.get(0).getDiagnosedAt()).isNull();
         assertThat(saved.get(1).getDiagnosedAt()).isNull();
-        assertThat(saved.get(2).getDiagnosedAt()).isNotNull();
+        assertThat(saved.get(2).getDiagnosedAt()).isNull();
+        assertThat(saved.get(2).getBoxes()).isNull();
+        assertThat(saved.get(3).getDiagnosedAt()).isNotNull();
         verify(ai, never()).diagnose(any(byte[].class), eq("image-1.jpg"), anyString());
     }
 }

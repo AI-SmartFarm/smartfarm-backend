@@ -36,6 +36,7 @@ public record DiagnosisResult(
 	}
 
 	public static DiagnosisResult from(DiagnosisResponse response) {
+		validate(response);
 		List<Detection> detections = response.detections();
 
 		Detection top = detections.stream()
@@ -67,6 +68,33 @@ public record DiagnosisResult(
 				severity != null && severity.lowConfidence(),
 				boxes,
 				guideOf(top.diagnosis()));
+	}
+
+	/** 잘못된 AI 응답은 정상 판정·사진 정리로 진행하지 않고 기존 진단 실패 경로로 보낸다. */
+	private static void validate(DiagnosisResponse response) {
+		if (response == null || !("detected".equals(response.result()) || "no_detection".equals(response.result()))) {
+			throw new IllegalStateException("AI 응답의 result가 올바르지 않음");
+		}
+		if ((response.isDetected() && response.detections().isEmpty())
+				|| (!response.isDetected() && !response.detections().isEmpty())) {
+			throw new IllegalStateException("AI 응답의 result와 detections가 일치하지 않음");
+		}
+		for (Detection detection : response.detections()) {
+			if (detection == null || detection.className() == null || detection.className().isBlank()) {
+				throw new IllegalStateException("AI 탐지의 class가 없음");
+			}
+			if (!DiseaseCatalog.isNormal(detection.className())) {
+				DiseaseCatalog.byClass(detection.className());
+			}
+			if (!Double.isFinite(detection.confidence()) || detection.confidence() < 0 || detection.confidence() > 1) {
+				throw new IllegalStateException("AI 탐지의 confidence가 올바르지 않음");
+			}
+			List<Double> bbox = detection.bbox();
+			if (bbox == null || bbox.size() != 4 || bbox.stream().anyMatch(v -> v == null || !Double.isFinite(v))
+					|| bbox.get(2) < bbox.get(0) || bbox.get(3) < bbox.get(1)) {
+				throw new IllegalStateException("AI 탐지의 bbox가 올바르지 않음");
+			}
+		}
 	}
 
 	private static String guideOf(Diagnosis diagnosis) {
