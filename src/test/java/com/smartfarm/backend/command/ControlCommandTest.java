@@ -64,4 +64,38 @@ class ControlCommandTest {
 
 		assertThat(command.getStatus()).isEqualTo(ControlCommand.EXPIRED);
 	}
+
+	@Test
+	void 추가_조회가_없어도_늦은_ACK는_만료로_남긴다() {
+		ControlCommand command = command();
+		command.markDelivered(CREATED.plusSeconds(3));
+		command.acknowledge(true, CREATED.plusSeconds(90));
+		assertThat(command.getStatus()).isEqualTo(ControlCommand.EXPIRED);
+	}
+
+	@Test
+	void 늦은_거절_ACK도_만료로_남긴다() {
+		ControlCommand command = command();
+		command.acknowledge(false, CREATED.plusSeconds(90));
+		assertThat(command.getStatus()).isEqualTo(ControlCommand.EXPIRED);
+	}
+
+	@Test
+	void 미전달_병해_명령은_TTL_이후_유지하지_않는다() {
+		ControlCommand command = ControlCommand.pestResponse("cmd_hold", "farm", "circFan", 1L,
+				3600, CREATED, CREATED.plusSeconds(60));
+		assertThat(command.holdsOnAt(CREATED.plusSeconds(30))).isTrue();
+		assertThat(command.holdsOnAt(CREATED.plusSeconds(90))).isFalse();
+	}
+
+	@Test
+	void ACK를_받은_병해_명령은_TTL_이후에도_가동_시간을_유지한다() {
+		ControlCommand command = ControlCommand.pestResponse("cmd_hold", "farm", "circFan", 1L,
+				3600, CREATED, CREATED.plusSeconds(60));
+		command.acknowledge(true, CREATED.plusSeconds(30));
+		assertThat(command.holdsOnAt(CREATED.plusSeconds(90))).isTrue();
+		assertThat(command.holdsOnAt(CREATED.plusSeconds(3600))).isFalse();
+		command.acknowledge(false, CREATED.plusSeconds(90));
+		assertThat(command.getStatus()).isEqualTo(ControlCommand.ACKED);
+	}
 }
