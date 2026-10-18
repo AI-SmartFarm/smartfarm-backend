@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-10-18 — 서버를 새 AWS 계정으로 이전 (김승윤)
+- 이유: 기존 계정(929862311742)의 무료 크레딧이 소진됐다. 새 계정(535635599556, 서울)으로 옮겼다.
+- 새 리소스 (모두 태그 `Project=SmartFarm`)
+  | 항목 | 값 |
+  |---|---|
+  | EC2 | `i-0540304ac1e0e073d` (SmartFarm-backend), t3.small, **Ubuntu 24.04**, 20GB gp3(암호화), IMDSv2 필수 |
+  | 보안 그룹 | `sg-081cfc80cbb733e69` — 인바운드 0개. 외부 노출은 Cloudflare 터널, 접속은 SSM |
+  | 서버 역할 | `SmartFarmEC2Role` (SSM + ECR 읽기) |
+  | ECR | `535635599556.dkr.ecr.ap-northeast-2.amazonaws.com/smartfarm-backend` (이미지 10개 보관) |
+  | 자동 배포 | OIDC 공급자 + `SmartFarmGitHubDeploy` 역할(팀 저장소 main 전용, 기존과 같은 권한) |
+- 팀 저장소 Actions 변수 `AWS_DEPLOY_ROLE_ARN`, `EC2_INSTANCE_ID`를 새 값으로 바꿨다. 마지막 main 배포를 다시 실행해 새 계정으로 빌드·배포되는 것을 확인했다.
+- 데이터: 기존 앱을 멈추고 mysqldump(`--single-transaction`)·`.env`·사진 볼륨을 옮겼다. 테이블 8개 행 수가 이전 전후로 같다. `.env`의 JWT 키·기기 비밀값·AI 키는 기존 값 그대로라 팀원 설정은 바뀌지 않는다(ECR 주소만 새 계정).
+- **서버 주소가 바뀌었다**(Cloudflare 임시 터널은 서버마다 주소가 다르다): `https://search-inflation-documentation-fellowship.trycloudflare.com`
+- 새 서버 준비 스크립트: `scripts/new-server-bootstrap.sh` (user-data로 Docker·AWS CLI·swap 2GB 설치)
+- 기존 서버 `i-03abb6c16e4374f21`은 앱을 멈춘 채 남겨 두었다. 안정화를 확인한 뒤 정리한다.
+
 ## 2026-10-07 — 병해충 안내 문구(guide)를 AI 응답에서 가져오기 (김승윤)
 - PR #8 (`feat/ai-guide`)
 - 배경: 제안서 아키텍처는 병해충 조치사항을 AI 서버("AI 조치사항 DB")가 맡는다. 그에 맞춰 안내 문구는 AI가, 장치 대응(순환팬 60분 등)은 백엔드가 정하도록 나눴다(기능 명세 F-04).
