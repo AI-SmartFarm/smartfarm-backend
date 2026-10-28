@@ -11,6 +11,7 @@ AI 기반 개방형 모바일 스마트팜 관리 시스템의 백엔드 (Java 2
 4. 서버: `./gradlew bootRun`
 5. 상태 확인: `curl localhost:8080/actuator/health` → `{"status":"UP"}`
    - 8080이 사용 중이면 `SERVER_PORT=8081 ./gradlew bootRun`으로 포트를 바꾼다.
+6. API 문서: `localhost:8080/swagger-ui.html` (Swagger UI). 배포 서버도 같은 경로. 모바일 앱용 정리는 `docs/api/mobile-api.md`
 
 ## AI 진단 서비스 연동 (API-005)
 

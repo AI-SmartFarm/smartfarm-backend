@@ -15,7 +15,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.smartfarm.backend.common.BadRequestException;
+import com.smartfarm.backend.common.OpenApiConfig;
 import com.smartfarm.backend.diagnosis.DiagnosisService;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
 
@@ -34,6 +39,9 @@ public class ImageController {
 		this.diagnosisService = diagnosisService;
 	}
 
+	@Operation(summary = "API-004 작물 사진 전송", description = "사진(Base64)을 저장하고 백그라운드에서 AI 진단을 요청한다. 주기 사진(trigger=routine)은 카메라별 10분에 1장만 저장하고, 저장하지 않으면 {\"ok\": true, \"file\": null}로 응답한다.")
+	@Tag(name = OpenApiConfig.TAG_DEVICE)
+	@SecurityRequirement(name = OpenApiConfig.DEVICE_JWT)
 	@PostMapping("/api/v1/farms/{farmId}/images")
 	public Map<String, Object> receive(@PathVariable String farmId, @Valid @RequestBody ImageRequest request) {
 		if (!farmId.equals(request.farmId())) {
@@ -53,6 +61,8 @@ public class ImageController {
 		return Map.of("ok", true, "file", filePath.substring(filePath.lastIndexOf('/') + 1));
 	}
 
+	@Operation(summary = "사진 파일 조회", description = "진단 이력의 imageUrl로 쓰는 경로. JSON이 아니라 이미지(image/jpeg, image/png)를 그대로 돌려준다. 파일이 없으면 404.")
+	@Tag(name = OpenApiConfig.TAG_MOBILE)
 	@GetMapping("/api/v1/images/{imageId}/file")
 	public ResponseEntity<Resource> file(@PathVariable long imageId) {
 		return imageService.find(imageId)

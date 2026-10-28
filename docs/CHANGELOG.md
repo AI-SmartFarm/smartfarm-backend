@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-10-28 — Swagger UI와 모바일 앱용 API 문서 (김승윤)
+- 브랜치 `feat/swagger` (PR 번호는 merge 후 기입)
+- springdoc-openapi 3.2.0(Spring Boot 4.1용)을 넣어 `/swagger-ui.html`, `/v3/api-docs`를 연다. 서버 주소는 상대 경로라 터널 주소가 바뀌어도 그대로 쓴다.
+- API를 모바일 앱 / 기기(시뮬레이터) / 기기 인증 / 운영 확인으로 묶었다. 기기 API 4개(API-001·003·004)에만 JWT 입력(Authorize)이 붙는다.
+- 컨트롤러에 `@Tag`, `@Operation`, `@SecurityRequirement` 설명만 추가했다. 동작 변경은 없다.
+- `docs/api/mobile-api.md`: 프론트 담당용 명세. 사용 가능한 API(API-008, 사진 파일)와 예정 API(API-002·007·010 설계안), 화면별 API 대응표.
+- 검증: 테스트 73개 통과(새 테스트 2개: OpenAPI 문서에 전체 경로와 기기 API JWT 표시, Swagger UI 열림).
+
 ## 2026-10-18 — 서버를 새 AWS 계정으로 이전 (김승윤)
 - 이유: 기존 계정(929862311742)의 무료 크레딧이 소진됐다. 새 계정(535635599556, 서울)으로 옮겼다.
 - 새 리소스 (모두 태그 `Project=SmartFarm`)
