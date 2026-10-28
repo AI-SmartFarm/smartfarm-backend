@@ -28,6 +28,8 @@ dependencies {
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
 	// Boot 4는 Jackson 3을 쓰는데 jjwt-jackson은 Jackson 2를 끌어오므로 gson 직렬화기를 쓴다.
 	runtimeOnly 'io.jsonwebtoken:jjwt-gson:0.13.0'
+	// 프론트·시뮬레이터 담당이 서버에서 바로 API를 확인하도록 Swagger UI를 둔다. 3.x가 Boot 4용이다.
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'

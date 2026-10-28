@@ -14,12 +14,17 @@ import com.smartfarm.backend.command.CommandService;
 import com.smartfarm.backend.command.ControlCommand;
 import com.smartfarm.backend.common.BadRequestException;
 import com.smartfarm.backend.common.ClockConfig;
+import com.smartfarm.backend.common.OpenApiConfig;
 import com.smartfarm.backend.control.DiseaseResponse;
 import com.smartfarm.backend.control.PestResponseService;
 import com.smartfarm.backend.image.ImageService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /** API-008 병해충 진단 이력 조회. 모바일용이라 인증하지 않는다. */
 @RestController
+@Tag(name = OpenApiConfig.TAG_MOBILE)
 public class DiagnosisController {
 
 	private static final int MAX_SIZE = 100;
@@ -66,6 +71,7 @@ public class DiagnosisController {
 		this.imageService = imageService;
 	}
 
+	@Operation(summary = "API-008 병해충 진단 이력 조회", description = "완료된 진단을 최신순으로 준다(size 1~100, 기본 20). 감염이면 자동 대응 명령(responses)과 안내 문구(guide)가 함께 온다. 정상 사진은 카메라별 최신 1장만 파일이 남아 imageUrl이 null일 수 있다.")
 	@GetMapping("/api/v1/farms/{farmId}/diagnoses")
 	public Map<String, List<Item>> history(@PathVariable String farmId,
 			@RequestParam(defaultValue = "20") int size) {

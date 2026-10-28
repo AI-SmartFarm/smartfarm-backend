@@ -9,8 +9,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.smartfarm.backend.common.ApiError;
+import com.smartfarm.backend.common.OpenApiConfig;
 import com.smartfarm.backend.farm.Gateway;
 import com.smartfarm.backend.farm.GatewayRepository;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +22,7 @@ import jakarta.validation.constraints.NotBlank;
 /** API-008 기기 토큰 발급. 재발급 토큰은 두지 않고, 만료되면 기기가 비밀값으로 다시 발급받는다. */
 @RestController
 @RequestMapping("/api/v1/auth")
+@Tag(name = OpenApiConfig.TAG_AUTH)
 public class AuthController {
 
 	private final GatewayRepository gatewayRepository;
@@ -37,6 +42,7 @@ public class AuthController {
 	public record TokenResponse(String accessToken, String tokenType, long expiresIn, String farmId) {
 	}
 
+	@Operation(summary = "API-009 기기 토큰 발급", description = "기기 ID와 비밀값으로 1시간짜리 JWT를 받는다. 사용자 로그인이 아니라 기기 인증이다. 틀리면 401 invalid credentials.")
 	@PostMapping("/token")
 	public ResponseEntity<?> issue(@Valid @RequestBody TokenRequest request) {
 		Gateway gateway = gatewayRepository.findById(request.gatewayId()).orElse(null);
